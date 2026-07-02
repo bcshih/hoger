@@ -88,6 +88,16 @@ def _parse_item(kind: str, item: dict, param_name: str):
                 "hoger.results: 無法將 %s 的值解析為 integer: %r", param_name, parsed
             )
             return None
+    elif kind == "boolean":
+        if isinstance(parsed, bool):
+            return parsed
+        text = str(parsed).strip().lower()
+        if text in ("true", "false"):
+            return text == "true"
+        logger.warning(
+            "hoger.results: 無法將 %s 的值解析為 boolean: %r", param_name, parsed
+        )
+        return None
     elif kind == "string":
         return str(parsed)
     elif kind == "geometry":
@@ -162,6 +172,11 @@ def write_result_3dm(
     所有幾何物件都帶上全部的 string UserText（不分別附著在特定物件上）——
     符合 HOGER 的設計：文字結果必須能在任一被選取的幾何上讀到。
     無 geometry 但有 string 輸出時，建立原點 Point 物件承載 UserText。
+
+    設計本意：number/integer/boolean 這些 kind **刻意不寫入 .3dm**——
+    它們由 executor 的 ToolResult JSON outputs 承載（Task 2.3）。
+    AttributeUserText 規則只約束 string（文字）輸出；.3dm 檔的職責是
+    幾何 + 附著其上的文字，數值類結果走 JSON 回傳即可，不需要落地到檔案。
     """
     if out_dir is None:
         from hoger.config import RESULTS_DIR as out_dir  # 延遲 import，方便測試 monkeypatch
@@ -179,6 +194,8 @@ def write_result_3dm(
             text_value = _user_text_value(values)
             if text_value is not None:
                 string_user_text[param_name] = text_value
+        # number/integer/boolean：刻意不寫入 3dm——由 executor 的
+        # ToolResult JSON outputs 承載（Task 2.3），見函式 docstring。
 
     if not geometry_objects and not string_user_text:
         return None
@@ -201,7 +218,8 @@ def write_result_3dm(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # %f（微秒）防止同一秒內連續呼叫覆蓋彼此的檔案
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     filename = f"{manifest.id}_{timestamp}.3dm"
     out_path = (out_dir / filename).resolve()
 

@@ -111,6 +111,59 @@ def test_parse_strips_rh_out_prefix_to_match_manifest():
     assert result["total"] == [42.0]
 
 
+def test_parse_boolean_json_string_and_native_bool():
+    manifest = _make_manifest([OutputSpec(param_name="flag", kind="boolean")])
+    # data 為 JSON 字串形式 "true"（compute 實況）
+    res = _gh_response([("RH_OUT:flag", [{"type": "System.Boolean", "data": "true"}])])
+    assert parse(res, manifest)["flag"] == [True]
+    # data 為原生 bool（防禦：某些序列化路徑可能直接給 bool）
+    res = _gh_response([("RH_OUT:flag", [{"type": "System.Boolean", "data": True}])])
+    assert parse(res, manifest)["flag"] == [True]
+    # "false" 也要是 Python False，不是字串
+    res = _gh_response([("RH_OUT:flag", [{"type": "System.Boolean", "data": "false"}])])
+    result = parse(res, manifest)
+    assert result["flag"] == [False]
+    assert isinstance(result["flag"][0], bool)
+
+
+def test_parse_boolean_bad_value_skipped(caplog):
+    manifest = _make_manifest([OutputSpec(param_name="flag", kind="boolean")])
+    res = _gh_response(
+        [
+            (
+                "RH_OUT:flag",
+                [
+                    {"type": "System.String", "data": json.dumps("not-a-bool")},
+                    {"type": "System.Boolean", "data": "true"},
+                ],
+            )
+        ]
+    )
+    with caplog.at_level("WARNING", logger="hoger.results"):
+        result = parse(res, manifest)
+    assert result["flag"] == [True]
+    assert any("hoger.results" == r.name for r in caplog.records)
+
+
+def test_parse_nested_branch_keys_sorted_numerically():
+    manifest = _make_manifest([OutputSpec(param_name="values", kind="number")])
+    # 字典序會把 {0;10} 排在 {0;2} 之前——必須依數字序 {0;1},{0;2},{0;10}
+    res = {
+        "values": [
+            {
+                "ParamName": "RH_OUT:values",
+                "InnerTree": {
+                    "{0;10}": [{"type": "System.Double", "data": "3.0"}],
+                    "{0;2}": [{"type": "System.Double", "data": "2.0"}],
+                    "{0;1}": [{"type": "System.Double", "data": "1.0"}],
+                },
+            }
+        ]
+    }
+    result = parse(res, manifest)
+    assert result["values"] == [1.0, 2.0, 3.0]
+
+
 # ── parse: defensive paths ───────────────────────────────────────────
 
 
@@ -219,6 +272,22 @@ def test_write_all_empty_outputs_returns_none_and_no_file(tmp_path):
     path = write_result_3dm(outputs, manifest, out_dir=tmp_path)
     assert path is None
     assert list(tmp_path.iterdir()) == []
+
+
+def test_write_consecutive_calls_produce_distinct_files(tmp_path):
+    # 檔名含微秒（%f），同一秒內連續呼叫不得覆蓋彼此
+    manifest = _make_manifest([OutputSpec(param_name="report", kind="string")])
+    outputs = {"report": ["x"]}
+
+    path1 = write_result_3dm(outputs, manifest, out_dir=tmp_path)
+    path2 = write_result_3dm(outputs, manifest, out_dir=tmp_path)
+
+    from pathlib import Path
+
+    assert path1 != path2
+    assert Path(path1).exists()
+    assert Path(path2).exists()
+    assert len(list(tmp_path.iterdir())) == 2
 
 
 def test_write_uses_tmp_path_out_dir_not_config_results_dir(tmp_path, monkeypatch):
