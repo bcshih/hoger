@@ -171,6 +171,7 @@ def to_mcp_tool(m: ToolManifest) -> dict:   # {"name","description","inputSchema
 
 ### 2.4 `core/trees.py` — 直接移植 compute_core 已驗證邏輯
 `geometry_tree(name, objs)`、`scalar_tree(name, value)`、`string_tree(name, value)`、`encoded_tree(name, encoded_list)`（接受已編碼 JSON 字串直接包 InnerTree，不 decode/re-encode）。
+**實作註記（已定案）**：tree 為純 dict `{"ParamName":..., "InnerTree": {"{0}": [...]}}`，不使用 compute_rhino3d 的 DataTree 類別（避免其 stdout/patch 問題）；`compute_client.evaluate` 直接收這些 dict。
 
 ### 2.5 `core/executor.py`
 ```python
@@ -412,29 +413,29 @@ def test_geometry_schema_has_file_and_encoded():
 ```python
 def test_bool_is_lowercase_string():
     t = trees.scalar_tree("_run", True)
-    assert t.data["InnerTree"]["{0}"][0] == {"type":"System.Boolean","data":"true"}
+    assert t["InnerTree"]["{0}"][0] == {"type":"System.Boolean","data":"true"}
 
 def test_whole_float_becomes_int32():
     t = trees.scalar_tree("_month", 18.0)
-    assert t.data["InnerTree"]["{0}"][0] == {"type":"System.Int32","data":18}
+    assert t["InnerTree"]["{0}"][0] == {"type":"System.Int32","data":18}
 
 def test_true_float_is_double():
-    assert trees.scalar_tree("_gs", 1.5).data["InnerTree"]["{0}"][0]["type"] == "System.Double"
+    assert trees.scalar_tree("_gs", 1.5)["InnerTree"]["{0}"][0]["type"] == "System.Double"
 
 def test_string_double_encoded():
     t = trees.string_tree("_epw", r"C:\weather\taipei.epw")
-    assert t.data["InnerTree"]["{0}"][0]["data"] == json.dumps(r"C:\weather\taipei.epw")
+    assert t["InnerTree"]["{0}"][0]["data"] == json.dumps(r"C:\weather\taipei.epw")
 
 def test_geometry_uses_net_type_and_encoded_json():
     bbox = rhino3dm.BoundingBox(rhino3dm.Point3d(0,0,0), rhino3dm.Point3d(10,10,10))
     brep = rhino3dm.Brep.CreateFromBox(bbox)
-    item = trees.geometry_tree("_geometry", [brep]).data["InnerTree"]["{0}"][0]
+    item = trees.geometry_tree("_geometry", [brep])["InnerTree"]["{0}"][0]
     assert item["type"] == "Rhino.Geometry.Brep"
     assert json.loads(item["data"])   # data 是合法 JSON 字串
 
 def test_encoded_tree_passthrough_no_reencode():
     raw = '{"version":10070,"archive3dm":70,"opennurbs":0,"data":"...abc"}'
-    item = trees.encoded_tree("_geometry", [raw]).data["InnerTree"]["{0}"][0]
+    item = trees.encoded_tree("_geometry", [raw])["InnerTree"]["{0}"][0]
     assert item["data"] == raw        # 原樣，不 decode/re-encode
 ```
 
