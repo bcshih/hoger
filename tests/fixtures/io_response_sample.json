@@ -1,0 +1,21 @@
+{
+  "Description": "radiation study",
+  "CacheKey": "md5_xxx",
+  "InputNames": ["_geometry", "context_", "_grid_size", "_run"],
+  "OutputNames": ["RH_OUT:Mesh", "RH_OUT:total"],
+  "Inputs": [
+    {"Name": "_geometry", "Nickname": "_geometry", "Description": "要分析的幾何面",
+     "ParamType": "Brep", "ResultType": "System.Object", "AtLeast": 1, "AtMost": 2147483647},
+    {"Name": "context_", "Nickname": "context_", "Description": "遮蔽物（選填）",
+     "ParamType": "Brep", "ResultType": "System.Object", "AtLeast": 0, "AtMost": 2147483647},
+    {"Name": "_grid_size", "Nickname": "_grid_size", "Description": "網格大小（公尺）",
+     "ParamType": "Number", "ResultType": "System.Double", "AtLeast": 1, "AtMost": 1,
+     "Default": 1.0, "Minimum": 0.1, "Maximum": 50.0},
+    {"Name": "_run", "Nickname": "_run", "Description": "執行開關",
+     "ParamType": "Boolean", "ResultType": "System.Boolean", "AtLeast": 1, "AtMost": 1, "Default": false}
+  ],
+  "Outputs": [
+    {"Name": "RH_OUT:Mesh", "Nickname": "Mesh", "ParamType": "Mesh"},
+    {"Name": "RH_OUT:total", "Nickname": "total", "ParamType": "Number"}
+  ]
+}
