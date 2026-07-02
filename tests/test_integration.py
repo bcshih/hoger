@@ -152,6 +152,7 @@ def test_manifest_from_live_io(live_compute):
     io_response = compute_client.io_query(GH_FILE)
     manifest = manifest_from_io(GH_FILE, io_response)
 
+    assert manifest.id
     assert len(manifest.inputs) > 0
     for spec in manifest.inputs:
         assert spec.kind in _VALID_KINDS
