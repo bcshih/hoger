@@ -169,20 +169,30 @@ def test_build_trees_missing_optional_no_default_skips_param():
 
 def test_build_trees_number_bad_value_raises():
     manifest = _make_manifest([InputSpec(param_name="width", kind="number", required=True)])
-    with pytest.raises(ToolArgError):
+    with pytest.raises(ToolArgError) as exc_info:
         build_trees(manifest, {"width": "abc"})
+    msg = str(exc_info.value)
+    assert "width" in msg
+    assert "expected a number" in msg
 
 
 def test_build_trees_integer_bad_value_raises():
     manifest = _make_manifest([InputSpec(param_name="count", kind="integer", required=True)])
-    with pytest.raises(ToolArgError):
+    with pytest.raises(ToolArgError) as exc_info:
         build_trees(manifest, {"count": "abc"})
+    msg = str(exc_info.value)
+    assert "count" in msg
+    assert "expected a number" in msg
 
 
 def test_build_trees_boolean_bad_value_raises():
     manifest = _make_manifest([InputSpec(param_name="flag", kind="boolean", required=True)])
-    with pytest.raises(ToolArgError):
+    with pytest.raises(ToolArgError) as exc_info:
         build_trees(manifest, {"flag": "yes"})
+    # 錯誤訊息必須保留 expected 提示與參數名
+    msg = str(exc_info.value)
+    assert "flag" in msg
+    assert "expected bool or 'true'/'false'" in msg
 
 
 def test_build_trees_string_bad_value_raises():
@@ -208,6 +218,24 @@ def test_build_trees_geometry_encoded_type_error_becomes_tool_arg_error():
     manifest = _make_manifest([InputSpec(param_name="geo", kind="geometry", required=True)])
     with pytest.raises(ToolArgError):
         build_trees(manifest, {"geo": {"encoded": [123]}})
+
+
+def test_build_trees_geometry_encoded_empty_list_required_raises():
+    manifest = _make_manifest([InputSpec(param_name="geo", kind="geometry", required=True)])
+    with pytest.raises(ToolArgError) as exc_info:
+        build_trees(manifest, {"geo": {"encoded": []}})
+    msg = str(exc_info.value)
+    assert "geo" in msg
+    assert "encoded list is empty" in msg
+
+
+def test_build_trees_geometry_encoded_empty_list_optional_skips_param():
+    # optional 參數給空 encoded list 視同未提供——跳過，不建 tree、不報錯
+    manifest = _make_manifest(
+        [InputSpec(param_name="geo", kind="geometry", required=False)]
+    )
+    trees = build_trees(manifest, {"geo": {"encoded": []}})
+    assert trees == []
 
 
 # ── build_trees: geometry — file_3dm ─────────────────────────────────
@@ -378,19 +406,47 @@ def test_run_tool_compute_error_does_not_crash(tmp_path, monkeypatch):
     )
 
     def fake_evaluate(gh_path, trees):
-        raise ComputeError("Rhino.Compute HTTP 500: boom")
+        raise ComputeError(
+            "Rhino.Compute HTTP 500: boom", status_code=500, body="boom body"
+        )
 
     monkeypatch.setattr("hoger.core.executor.compute_client.evaluate", fake_evaluate)
 
     result = run_tool(manifest, {"width": 1.0}, out_dir=tmp_path)
 
-    assert result.outputs == {"total": [], "Mesh": []}
+    # outputs 形狀與正常路徑一致：geometry kind 是 dict，不是 []
+    assert result.outputs == {
+        "total": [],
+        "Mesh": {"count": 0, "in_3dm": False},
+    }
     assert result.result_3dm is None
     assert len(result.errors) == 1
     assert "boom" in result.errors[0]
     assert result.warnings == []
     assert result.modelunits is None
-    assert result.raw is None
+    # raw 保留 ComputeError 攜帶的 status_code/body（JSON-safe）
+    assert result.raw == {"error_status_code": 500, "error_body": "boom body"}
+    json.dumps(result.outputs)
+    json.dumps(result.raw)
+
+
+def test_run_tool_compute_error_geometry_output_keeps_dict_shape(tmp_path, monkeypatch):
+    # 下游讀 outputs["Mesh"]["count"] 在失敗時不得 TypeError
+    manifest = _make_manifest(
+        inputs=[],
+        outputs=[OutputSpec(param_name="Mesh", kind="geometry")],
+    )
+
+    def fake_evaluate(gh_path, trees):
+        raise ComputeError("connection refused")
+
+    monkeypatch.setattr("hoger.core.executor.compute_client.evaluate", fake_evaluate)
+
+    result = run_tool(manifest, {}, out_dir=tmp_path)
+
+    assert isinstance(result.outputs["Mesh"], dict)
+    assert result.outputs["Mesh"]["count"] == 0
+    assert result.outputs["Mesh"]["in_3dm"] is False
     json.dumps(result.outputs)
 
 

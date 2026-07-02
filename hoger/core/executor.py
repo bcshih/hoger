@@ -54,18 +54,12 @@ class ToolResult:
 # ── build_trees ──────────────────────────────────────────────────────
 
 
-def _coerce_boolean(value) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
-        return value.strip().lower() == "true"
-    raise ToolArgError(
-        f"invalid value for boolean parameter: {value!r} "
-        f"(expected bool or 'true'/'false')"
-    )
-
-
 def _build_scalar_tree(spec: InputSpec, value) -> dict:
+    """
+    非 geometry kind 的 tree 建構。ToolArgError 訊息統一格式：
+
+        invalid value for {kind} parameter '{param}': {value!r} (expected ...)
+    """
     kind = spec.kind
 
     if kind == "number":
@@ -73,7 +67,8 @@ def _build_scalar_tree(spec: InputSpec, value) -> dict:
             num = float(value)
         except (TypeError, ValueError) as exc:
             raise ToolArgError(
-                f"invalid value for number parameter {spec.param_name!r}: {value!r}"
+                f"invalid value for number parameter '{spec.param_name}': {value!r} "
+                f"(expected a number)"
             ) from exc
         return scalar_tree(spec.param_name, num)
 
@@ -82,27 +77,32 @@ def _build_scalar_tree(spec: InputSpec, value) -> dict:
             num = int(value)
         except (TypeError, ValueError) as exc:
             raise ToolArgError(
-                f"invalid value for integer parameter {spec.param_name!r}: {value!r}"
+                f"invalid value for integer parameter '{spec.param_name}': {value!r} "
+                f"(expected a number)"
             ) from exc
         return scalar_tree(spec.param_name, num)
 
     if kind == "boolean":
-        try:
-            flag = _coerce_boolean(value)
-        except ToolArgError as exc:
+        if isinstance(value, bool):
+            flag = value
+        elif isinstance(value, str) and value.strip().lower() in ("true", "false"):
+            flag = value.strip().lower() == "true"
+        else:
             raise ToolArgError(
-                f"invalid value for boolean parameter {spec.param_name!r}: {value!r}"
-            ) from exc
+                f"invalid value for boolean parameter '{spec.param_name}': {value!r} "
+                f"(expected bool or 'true'/'false')"
+            )
         return scalar_tree(spec.param_name, flag)
 
     if kind == "string":
         if isinstance(value, bool) or not isinstance(value, (str, int, float)):
             raise ToolArgError(
-                f"invalid value for string parameter {spec.param_name!r}: {value!r}"
+                f"invalid value for string parameter '{spec.param_name}': {value!r} "
+                f"(expected a string or scalar)"
             )
         return string_tree(spec.param_name, str(value))
 
-    raise ToolArgError(f"unsupported kind {kind!r} for parameter {spec.param_name!r}")
+    raise ToolArgError(f"unsupported kind {kind!r} for parameter '{spec.param_name}'")
 
 
 def _load_geometry_from_3dm(path: str, layer: Optional[str] = None) -> list:
@@ -133,20 +133,32 @@ def _load_geometry_from_3dm(path: str, layer: Optional[str] = None) -> list:
     return objects
 
 
-def _build_geometry_tree(spec: InputSpec, value) -> dict:
+def _build_geometry_tree(spec: InputSpec, value) -> Optional[dict]:
+    """
+    geometry kind 的 tree 建構。回傳 tree dict，或 None（代表跳過該參數——
+    optional 參數給了空的 encoded list 時，視同未提供）。
+    """
     if not isinstance(value, dict):
         raise ToolArgError(
-            f"invalid value for geometry parameter {spec.param_name!r}: expected object "
+            f"invalid value for geometry parameter '{spec.param_name}': expected object "
             f"with 'encoded' or 'file_3dm', got {value!r}"
         )
 
-    encoded = value.get("encoded")
-    if encoded:
+    if "encoded" in value:
+        encoded = value["encoded"]
+        if not encoded:
+            # 空 list 與 file_3dm 載入 0 物件對稱處理：required -> 錯誤；
+            # optional -> 跳過（與未提供該參數一致），不誤導使用者去看 file_3dm。
+            if spec.required:
+                raise ToolArgError(
+                    f"geometry parameter '{spec.param_name}': encoded list is empty"
+                )
+            return None
         try:
             return encoded_tree(spec.param_name, encoded)
         except TypeError as exc:
             raise ToolArgError(
-                f"invalid 'encoded' entry for geometry parameter {spec.param_name!r}: {exc}"
+                f"invalid 'encoded' entry for geometry parameter '{spec.param_name}': {exc}"
             ) from exc
 
     file_3dm = value.get("file_3dm")
@@ -154,19 +166,19 @@ def _build_geometry_tree(spec: InputSpec, value) -> dict:
         layer = value.get("layer")
         if not os.path.exists(file_3dm):
             raise ToolArgError(
-                f"file_3dm not found for geometry parameter {spec.param_name!r}: {file_3dm!r}"
+                f"file_3dm not found for geometry parameter '{spec.param_name}': {file_3dm!r}"
             )
         objects = _load_geometry_from_3dm(file_3dm, layer)
         if not objects and spec.required:
             layer_info = f" (layer={layer!r})" if layer else ""
             raise ToolArgError(
-                f"geometry parameter {spec.param_name!r} is required but no objects "
+                f"geometry parameter '{spec.param_name}' is required but no objects "
                 f"were loaded from {file_3dm!r}{layer_info}"
             )
         return geometry_tree(spec.param_name, objects)
 
     raise ToolArgError(
-        f"geometry parameter {spec.param_name!r} requires either 'encoded' or 'file_3dm'"
+        f"geometry parameter '{spec.param_name}' requires either 'encoded' or 'file_3dm'"
     )
 
 
@@ -191,7 +203,9 @@ def build_trees(manifest: ToolManifest, args: dict) -> list:
                 continue
 
         if spec.kind == "geometry":
-            trees.append(_build_geometry_tree(spec, value))
+            tree = _build_geometry_tree(spec, value)
+            if tree is not None:  # None = optional 參數給了空 encoded list，跳過
+                trees.append(tree)
         else:
             trees.append(_build_scalar_tree(spec, value))
 
@@ -235,14 +249,20 @@ def run_tool(manifest: ToolManifest, args: dict, out_dir=None) -> ToolResult:
         res = compute_client.evaluate(manifest.gh_file, trees)
     except ComputeError as exc:
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        # outputs 形狀必須與正常路徑一致：geometry kind 是 dict
+        # {"count": 0, "in_3dm": False} 而非 []，下游讀 outputs[name]["count"]
+        # 在失敗時才不會 TypeError。
+        empty = {o.param_name: [] for o in manifest.outputs}
         return ToolResult(
-            outputs={o.param_name: [] for o in manifest.outputs},
+            outputs=_json_safe_outputs(empty, manifest, None),
             result_3dm=None,
             elapsed_ms=elapsed_ms,
             errors=[str(exc)],
             warnings=[],
             modelunits=None,
-            raw=None,
+            # 不丟資訊：ComputeError 攜帶的 status_code/body 以 JSON-safe dict
+            # 保留在 raw，供 API debug 端呈現。
+            raw={"error_status_code": exc.status_code, "error_body": exc.body},
         )
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
