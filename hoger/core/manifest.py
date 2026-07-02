@@ -17,6 +17,7 @@ enum_values）完全一致。
 預設值），缺欄位不會 crash。
 """
 
+import hashlib
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,15 @@ from hoger.core import type_mapping
 
 
 class InputSpec(BaseModel):
+    """
+    工具輸入定義。屬性名與 type_mapping 的鴨子型別契約完全一致。
+
+    required 欄位是「單一真相」：其推導（AtLeast >= 1 且無 Default）只發生在
+    manifest_from_io() 解析 /io 回應時。之後（UI 或手動編輯 tools/*.json）
+    required 欄位本身即為權威值——to_mcp_tool() 只看這個欄位，不會再依
+    default 重新推導。
+    """
+
     param_name: str  # GH 原名，底線原樣保留（_geometry、context_）
     label: str = ""
     kind: str  # number|integer|boolean|string|geometry
@@ -72,12 +82,18 @@ def _slugify(stem: str) -> str:
 
     規則：小寫化 -> 空白與底線變 '-' -> 移除非 [a-z0-9-] 字元
     -> 連續 '-' 合併 -> 去頭尾 '-'。
+
+    注意：非拉丁字元（中文、日文等）會被移除。若移除後結果為空字串
+    （例如檔名全為非 ASCII 字元），fallback 為 "tool-" + 原始 stem 的
+    SHA-1 前 8 碼（十六進位），保證 id 非空且對同一輸入穩定。
     """
     s = stem.lower()
     s = re.sub(r"[\s_]+", "-", s)
     s = re.sub(r"[^a-z0-9-]", "", s)
     s = re.sub(r"-+", "-", s)
     s = s.strip("-")
+    if not s:
+        return f"tool-{hashlib.sha1(stem.encode('utf-8')).hexdigest()[:8]}"
     return s
 
 
@@ -167,7 +183,9 @@ def to_mcp_tool(m: ToolManifest) -> dict:
         description = m.display_name
 
     properties = {i.param_name: type_mapping.to_json_schema(i) for i in m.inputs}
-    required = [i.param_name for i in m.inputs if i.required and i.default is None]
+    # InputSpec.required 是單一真相（見 InputSpec docstring），這裡不再依
+    # default 重新推導，避免手動編輯過的 required=True 被靜默丟棄。
+    required = [i.param_name for i in m.inputs if i.required]
 
     input_schema: dict = {"type": "object", "properties": properties}
     if required:

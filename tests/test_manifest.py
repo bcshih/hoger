@@ -11,6 +11,7 @@ Rhino.Compute 回應有出入，因此解析邏輯必須防禦性）。
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -105,6 +106,43 @@ def test_id_generation(gh_path, expected_id):
 def test_display_name_keeps_original_stem():
     m = manifest_from_io("Radiation Study_hops.gh", {})
     assert m.display_name == "Radiation Study_hops"
+
+
+# ── id generation: non-ASCII fallback ────────────────────────────────
+
+
+@pytest.mark.parametrize("gh_path", ["分析.gh", "模擬測試.gh"])
+def test_id_all_non_ascii_filename_hash_fallback(gh_path):
+    m = manifest_from_io(gh_path, {})
+    # Non-empty and matches the allowed charset.
+    assert m.id
+    assert re.fullmatch(r"[a-z0-9-]+", m.id)
+    # Hash fallback shape: tool-<8 hex chars>.
+    assert re.fullmatch(r"tool-[0-9a-f]{8}", m.id)
+    # Stable: same input -> same output.
+    assert manifest_from_io(gh_path, {}).id == m.id
+
+
+def test_id_fallback_distinct_for_distinct_names():
+    assert manifest_from_io("分析.gh", {}).id != manifest_from_io("模擬測試.gh", {}).id
+
+
+@pytest.mark.parametrize(
+    "gh_path",
+    [
+        "Radiation Study_hops.gh",
+        "comfort_分析 v2.gh",
+        "__a  b__.gh",
+        "simple.gh",
+        "分析.gh",
+        "模擬測試.gh",
+        "---.gh",
+    ],
+)
+def test_id_never_empty(gh_path):
+    m = manifest_from_io(gh_path, {})
+    assert m.id
+    assert re.fullmatch(r"[a-z0-9-]+", m.id)
 
 
 # ── defensive parsing ────────────────────────────────────────────────
@@ -228,6 +266,29 @@ def test_to_mcp_tool_omits_required_key_when_all_optional():
     )
     tool = to_mcp_tool(m)
     assert "required" not in tool["inputSchema"]
+
+
+def test_to_mcp_tool_required_field_is_single_source_of_truth():
+    # InputSpec.required is authoritative: a manually-edited spec with
+    # required=True AND a default must still appear in the required list.
+    m = ToolManifest(
+        id="manual-edit",
+        display_name="Manual Edit",
+        gh_file="foo.gh",
+        inputs=[
+            InputSpec(
+                param_name="_grid",
+                kind="number",
+                param_type="Number",
+                required=True,
+                default=5.0,
+            ),
+        ],
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    tool = to_mcp_tool(m)
+    assert tool["inputSchema"]["required"] == ["_grid"]
 
 
 # ── ToolManifest roundtrip ───────────────────────────────────────────
