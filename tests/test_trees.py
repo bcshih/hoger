@@ -17,6 +17,7 @@ DataTree payload（純 dict，不依賴 compute_rhino3d.Grasshopper.DataTree）�
 
 import json
 
+import pytest
 import rhino3dm
 
 from hoger.core import trees
@@ -168,7 +169,8 @@ def test_encoded_tree_str_passthrough_no_reencode():
 def test_encoded_tree_dict_with_type_and_data_passthrough():
     pre_wrapped = {"type": "Rhino.Geometry.Mesh", "data": "already-json-string"}
     item = trees.encoded_tree("_geometry", [pre_wrapped])["InnerTree"]["{0}"][0]
-    assert item is pre_wrapped or item == pre_wrapped
+    # 現行實作保證不複製——斷更強的不變量（同一物件原樣轉發）
+    assert item is pre_wrapped
     assert item == {"type": "Rhino.Geometry.Mesh", "data": "already-json-string"}
 
 
@@ -196,3 +198,9 @@ def test_encoded_tree_shape():
     t = trees.encoded_tree("_geometry", ["{}"])
     assert t["ParamName"] == "_geometry"
     assert set(t["InnerTree"].keys()) == {"{0}"}
+
+
+def test_encoded_tree_rejects_unexpected_type():
+    # 非 dict/str 的項目必須在邊界炸開，不能靜默產生壞 payload
+    with pytest.raises(TypeError, match="unsupported entry type int"):
+        trees.encoded_tree("_x", [1])

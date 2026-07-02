@@ -94,14 +94,26 @@ def encoded_tree(param_name: str, encoded_list: list) -> dict:
     - dict 且含 "type" + "data"：視為已組好的 item，原樣放入
     - dict（rhino3dm Encode() 產物）：包成 GeometryBase item，data 用 json.dumps
     - str（已是 JSON 字串）：包成 GeometryBase item，data 原樣（不再包一層）
+
+    其他型別（int、list、None...）一律 raise TypeError——本模組的宗旨是
+    錯誤要在邊界炸開，不能靜默產生壞 payload 讓 GH 元件收到 null。
     """
     items = []
     for entry in encoded_list:
         if isinstance(entry, dict) and "type" in entry and "data" in entry:
+            # 「同時含 "type"+"data"」不會誤判 rhino3dm Encode() 產物：
+            # 實測 rhino3dm 8.17.0 的 Brep/Mesh/NurbsCurve/Point/Extrusion
+            # .Encode().keys() 全部恰為 {version, archive3dm, opennurbs, data}
+            # ——含 "data" 但不含 "type"，故不碰撞，安全落到下一分支。
             items.append(entry)
         elif isinstance(entry, dict):
             items.append({"type": _GEOMETRY_BASE_TYPE, "data": json.dumps(entry)})
-        else:
+        elif isinstance(entry, str):
             items.append({"type": _GEOMETRY_BASE_TYPE, "data": entry})
+        else:
+            raise TypeError(
+                f"encoded_tree: unsupported entry type {type(entry).__name__}; "
+                f"expected dict or str"
+            )
 
     return _wrap(param_name, items)
