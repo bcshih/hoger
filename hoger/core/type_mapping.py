@@ -148,29 +148,16 @@ def to_json_schema(spec) -> dict:
 
 # ── net_type_for ─────────────────────────────────────────────────────
 
-_NET_TYPE_NAMES = {
-    "Brep",
-    "Mesh",
-    "Extrusion",
-    "SubD",
-    "Curve",
-    "ArcCurve",
-    "LineCurve",
-    "NurbsCurve",
-    "PolylineCurve",
-    "Surface",
-    "NurbsSurface",
-    "Point",
-}
-
 
 def net_type_for(type_name: str) -> str:
     """
     把 rhino3dm 型別名轉成 .NET 完整名稱。
 
-    對照表中的名稱與不在表中的名稱都回傳 f"Rhino.Geometry.{type_name}"
-    ——目前保留對照表結構是為了未來若有型別對映到不同命名空間時方便擴充。
+    目前所有 rhino3dm 幾何型別名（Brep, Mesh, Extrusion, SubD, Curve,
+    ArcCurve, LineCurve, NurbsCurve, PolylineCurve, Surface, NurbsSurface,
+    Point）與 .NET 名稱皆為 1:1 對應——v1.0.3 compute_core.py 的 _NET_TYPE
+    dict 中 12 個對映的 value 全部等於 f"Rhino.Geometry.{key}"，故此處
+    簡化為純格式化函式。未來若出現不一致的型別（例如需要不同
+    namespace），再引入對照 dict。
     """
-    if type_name in _NET_TYPE_NAMES:
-        return f"Rhino.Geometry.{type_name}"
     return f"Rhino.Geometry.{type_name}"
