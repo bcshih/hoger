@@ -167,6 +167,37 @@ class TestGet:
         assert retrieved.description == "A test tool"
 
 
+class TestToolIdValidation:
+    """tool_id 格式驗證：路徑逃逸與非 kebab-case 輸入一律 ToolNotFound"""
+
+    def test_get_path_traversal_forward_slash(self, tmp_path):
+        """get('../evil') -> ToolNotFound（不逃出 tools_dir）"""
+        with pytest.raises(ToolNotFound):
+            get("../evil", tools_dir=tmp_path)
+
+    def test_delete_path_traversal_backslash(self, tmp_path):
+        """delete('..\\evil') -> ToolNotFound（不逃出 tools_dir）"""
+        with pytest.raises(ToolNotFound):
+            delete("..\\evil", tools_dir=tmp_path)
+
+    def test_get_uppercase_underscore_invalid(self, tmp_path):
+        """get('A_B')：大寫與底線不合法 -> ToolNotFound"""
+        with pytest.raises(ToolNotFound):
+            get("A_B", tools_dir=tmp_path)
+
+    def test_traversal_does_not_touch_outside_file(self, tmp_path):
+        """路徑逃逸的 delete 不會刪到 tools_dir 之外的檔案"""
+        tools_dir = tmp_path / "tools"
+        tools_dir.mkdir()
+        outside = tmp_path / "outside.json"
+        outside.write_text("{}", encoding="utf-8")
+
+        with pytest.raises(ToolNotFound):
+            delete("../outside", tools_dir=tools_dir)
+
+        assert outside.exists()
+
+
 class TestListTools:
     """list_tools 測試"""
 

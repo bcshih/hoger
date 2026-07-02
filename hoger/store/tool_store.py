@@ -17,19 +17,36 @@ API：
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from pydantic import ValidationError
+
 from hoger.core.manifest import ToolManifest
 
 logger = logging.getLogger("hoger.store")
+
+# 合法 tool_id：kebab-case（小寫字母、數字、連字號），與 manifest._slugify
+# 的產出格式一致。拒絕其他字元可同時擋掉路徑逃逸（"../evil"、"..\\evil"）
+# 與大寫、底線等異常輸入。
+_TOOL_ID_RE = re.compile(r"^[a-z0-9-]+$")
 
 
 class ToolNotFound(KeyError):
     """指定 id 的工具不存在"""
 
     pass
+
+
+def _validate_tool_id(tool_id: str) -> None:
+    """
+    驗證 tool_id 格式。不合法（路徑逃逸字元、大寫、底線等）一律拋
+    ToolNotFound——對呼叫端而言等同「查無此工具」，不洩漏檔案系統細節。
+    """
+    if not isinstance(tool_id, str) or not _TOOL_ID_RE.match(tool_id):
+        raise ToolNotFound(tool_id)
 
 
 def _get_tools_dir(tools_dir: Optional[Path]) -> Path:
@@ -83,9 +100,10 @@ def get(tool_id: str, tools_dir: Optional[Path] = None) -> ToolManifest:
         ToolManifest 物件
 
     Raises:
-        ToolNotFound: 如果工具不存在
+        ToolNotFound: 如果工具不存在或 tool_id 格式不合法
         json.JSONDecodeError, pydantic.ValidationError: 檔案損壞時原樣拋出
     """
+    _validate_tool_id(tool_id)
     tools_dir = _get_tools_dir(tools_dir)
     file_path = tools_dir / f"{tool_id}.json"
 
@@ -119,7 +137,7 @@ def list_tools(tools_dir: Optional[Path] = None) -> list[ToolManifest]:
                 data = json.load(f)
             manifest = ToolManifest.model_validate(data)
             manifests.append(manifest)
-        except (json.JSONDecodeError, Exception) as e:
+        except (json.JSONDecodeError, ValidationError) as e:
             logger.warning(f"Failed to load tool from {json_file.name}: {e}")
             continue
 
@@ -137,8 +155,9 @@ def delete(tool_id: str, tools_dir: Optional[Path] = None) -> None:
         tools_dir: JSON 檔存放目錄；None 時使用 config.TOOLS_DIR
 
     Raises:
-        ToolNotFound: 如果工具不存在
+        ToolNotFound: 如果工具不存在或 tool_id 格式不合法
     """
+    _validate_tool_id(tool_id)
     tools_dir = _get_tools_dir(tools_dir)
     file_path = tools_dir / f"{tool_id}.json"
 
