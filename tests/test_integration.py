@@ -93,7 +93,7 @@ def _make_box_mesh_3dm(path: Path) -> None:
     file3dm.Write(str(path), 7)
 
 
-def _build_minimal_args(manifest, tmp_path) -> dict:
+def _build_minimal_args(manifest, tmp_path) -> tuple[dict | None, str | None]:
     """
     為 manifest 的每個 required input 構造最小可行的參數值。
 
@@ -154,6 +154,7 @@ def test_manifest_from_live_io(live_compute):
 
     assert manifest.id
     assert len(manifest.inputs) > 0
+    assert len(manifest.outputs) > 0
     for spec in manifest.inputs:
         assert spec.kind in _VALID_KINDS
         assert spec.param_name
