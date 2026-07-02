@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = ["integration: requires live Rhino.Compute (deselect with '-m \"not integration\"')"]
+addopts = "-m 'not integration'"
