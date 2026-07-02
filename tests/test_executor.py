@@ -238,6 +238,16 @@ def test_build_trees_geometry_encoded_empty_list_optional_skips_param():
     assert trees == []
 
 
+def test_build_trees_geometry_encoded_null_falls_through_to_file_3dm(tmp_path):
+    # JSON 客戶端常送 "encoded": null——必須落到 file_3dm 分支正常載入，
+    # 不得誤報 "encoded list is empty"
+    path = _make_3dm_with_layers(tmp_path)
+    manifest = _make_manifest([InputSpec(param_name="geo", kind="geometry", required=True)])
+    trees = build_trees(manifest, {"geo": {"encoded": None, "file_3dm": path}})
+    items = trees[0]["InnerTree"]["{0}"]
+    assert len(items) == 2
+
+
 # ── build_trees: geometry — file_3dm ─────────────────────────────────
 
 

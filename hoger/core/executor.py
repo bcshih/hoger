@@ -144,7 +144,9 @@ def _build_geometry_tree(spec: InputSpec, value) -> Optional[dict]:
             f"with 'encoded' or 'file_3dm', got {value!r}"
         )
 
-    if "encoded" in value:
+    # is not None（而非 "encoded" in value）：JSON 客戶端常送 "encoded": null，
+    # 該情況應落到 file_3dm 分支；空 list [] 仍進本分支（required 檢查）。
+    if value.get("encoded") is not None:
         encoded = value["encoded"]
         if not encoded:
             # 空 list 與 file_3dm 載入 0 物件對稱處理：required -> 錯誤；
