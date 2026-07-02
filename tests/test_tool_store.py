@@ -197,6 +197,26 @@ class TestToolIdValidation:
 
         assert outside.exists()
 
+    def test_get_trailing_newline_invalid(self, tmp_path):
+        """get('tool\\n')：re.match 的 '$' 會放過尾端換行，必須用 fullmatch 擋下 -> ToolNotFound"""
+        with pytest.raises(ToolNotFound):
+            get("tool-id\n", tools_dir=tmp_path)
+
+    def test_save_path_traversal_id_raises_tool_not_found(self, tmp_path):
+        """save()：manifest.id 是使用者輸入（API 允許客戶端送 manifest），
+        path traversal id（'../x'）必須在 save() 開頭就被擋下 -> ToolNotFound"""
+        manifest = make_manifest("placeholder")
+        manifest.id = "../x"
+        with pytest.raises(ToolNotFound):
+            save(manifest, tools_dir=tmp_path)
+
+    def test_save_trailing_newline_id_raises_tool_not_found(self, tmp_path):
+        """save()：manifest.id 含尾端換行（'tool\\n'）必須被擋下 -> ToolNotFound"""
+        manifest = make_manifest("placeholder")
+        manifest.id = "tool-id\n"
+        with pytest.raises(ToolNotFound):
+            save(manifest, tools_dir=tmp_path)
+
 
 class TestListTools:
     """list_tools 測試"""

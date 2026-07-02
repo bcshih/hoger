@@ -45,7 +45,7 @@ def _validate_tool_id(tool_id: str) -> None:
     驗證 tool_id 格式。不合法（路徑逃逸字元、大寫、底線等）一律拋
     ToolNotFound——對呼叫端而言等同「查無此工具」，不洩漏檔案系統細節。
     """
-    if not isinstance(tool_id, str) or not _TOOL_ID_RE.match(tool_id):
+    if not isinstance(tool_id, str) or not _TOOL_ID_RE.fullmatch(tool_id):
         raise ToolNotFound(tool_id)
 
 
@@ -71,7 +71,12 @@ def save(manifest: ToolManifest, tools_dir: Optional[Path] = None) -> str:
 
     Returns:
         寫入檔案的絕對路徑（字串）
+
+    Raises:
+        ToolNotFound: manifest.id 格式不合法（API 允許客戶端送 manifest，
+            id 成為使用者輸入，須在落地前擋下路徑逃逸等異常字元）
     """
+    _validate_tool_id(manifest.id)
     tools_dir = _get_tools_dir(tools_dir)
 
     # 更新 updated_at
