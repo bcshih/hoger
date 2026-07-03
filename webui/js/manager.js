@@ -25,10 +25,21 @@ const STATE = {
   selectedId: null,
   detailLoading: false,
   manifest: null, // 編輯中的完整 manifest（可變）
+  lastSavedManifest: null, // 最後載入/儲存成功時的深拷貝，供 isDirty() 比對
   mcpSchemaPreview: null, // 本地即時重算的 mcp_schema 預覽
   saving: false,
   deleting: false,
 };
+
+const UNSAVED_CONFIRM_MSG = "目前工具有未儲存的變更，切換後將遺失。確定要繼續嗎？";
+
+// 編輯中的 manifest 與最後載入/儲存版本不一致 -> 有未儲存變更。
+// 兩邊都來自同一份後端 JSON（一份直接持有、一份深拷貝），key 順序一致，
+// 用 JSON.stringify 比對即可。
+function isDirty() {
+  if (!STATE.manifest || !STATE.lastSavedManifest) return false;
+  return JSON.stringify(STATE.manifest) !== JSON.stringify(STATE.lastSavedManifest);
+}
 
 let root = null;
 
@@ -39,6 +50,7 @@ export function init(container) {
   STATE.selectedId = null;
   STATE.detailLoading = false;
   STATE.manifest = null;
+  STATE.lastSavedManifest = null;
   STATE.mcpSchemaPreview = null;
   STATE.saving = false;
   STATE.deleting = false;
@@ -71,6 +83,7 @@ function render() {
   renderDetail();
 
   root.querySelector("#refresh-btn").addEventListener("click", () => {
+    if (isDirty() && !window.confirm(UNSAVED_CONFIRM_MSG)) return;
     loadList();
   });
 }
@@ -157,14 +170,17 @@ async function loadList() {
 }
 
 async function selectTool(id) {
+  if (isDirty() && !window.confirm(UNSAVED_CONFIRM_MSG)) return;
   STATE.selectedId = id;
   STATE.detailLoading = true;
   STATE.manifest = null;
+  STATE.lastSavedManifest = null;
   STATE.mcpSchemaPreview = null;
   render();
   try {
     const data = await api(`/api/tools/${encodeURIComponent(id)}`);
     STATE.manifest = data.manifest;
+    STATE.lastSavedManifest = JSON.parse(JSON.stringify(data.manifest));
     STATE.mcpSchemaPreview = data.mcp_schema;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -481,6 +497,18 @@ async function saveManifest() {
     return;
   }
 
+  // min/max 交叉驗證：兩者皆有值時 minimum 不可大於 maximum。
+  for (const input of STATE.manifest.inputs) {
+    if (
+      input.minimum !== null && input.minimum !== undefined &&
+      input.maximum !== null && input.maximum !== undefined &&
+      input.minimum > input.maximum
+    ) {
+      toast(`參數「${input.param_name}」的最小值大於最大值`, "error");
+      return;
+    }
+  }
+
   STATE.saving = true;
   render();
 
@@ -493,12 +521,14 @@ async function saveManifest() {
       body: payload,
     });
     STATE.manifest = saved;
+    STATE.lastSavedManifest = JSON.parse(JSON.stringify(saved));
     toast("已儲存", "success");
     await loadList();
     // loadList() 已呼叫 render()；重新載入此工具的 mcp_schema（改用後端權威值）
     try {
       const data = await api(`/api/tools/${encodeURIComponent(saved.id)}`);
       STATE.manifest = data.manifest;
+      STATE.lastSavedManifest = JSON.parse(JSON.stringify(data.manifest));
       STATE.mcpSchemaPreview = data.mcp_schema;
     } catch {
       // 略過：清單已刷新，detail 顯示本地重算版本即可
@@ -527,6 +557,7 @@ async function deleteManifest() {
     toast("已刪除", "success");
     STATE.selectedId = null;
     STATE.manifest = null;
+    STATE.lastSavedManifest = null;
     STATE.mcpSchemaPreview = null;
     await loadList();
   } catch (err) {

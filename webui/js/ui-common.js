@@ -51,6 +51,8 @@ export function bindEditableCells(tbody, list, numericFields, onChange) {
       if (!item) return;
 
       if (field === "default") {
+        // default 欄位解析：空字串存 null；可轉數字則存 number，否則原樣
+        // 存字串（default 的合法型別依 kind 而異，這裡不強制、交後端驗證）。
         const raw = input.value.trim();
         item.default = raw === "" ? null : isNaN(Number(raw)) ? raw : Number(raw);
         onChange?.(item, field, item.default);
