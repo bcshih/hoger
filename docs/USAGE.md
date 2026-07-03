@@ -38,7 +38,7 @@ HOGER 把任意 Grasshopper（`.gh`）檔案自動轉換成兩種可被外部呼
 | `HOGER_RESULTS_DIR` | `<專案根>\generated\results` | 執行結果 `.3dm` 輸出目錄 |
 | `HOGER_GH_DIR` | `<專案根>\gh_files` | 上傳的 `.gh` 檔案存放目錄 |
 
-**注意**：`run_hoger.ps1` 目前把 uvicorn 的 `--port` **寫死為 8600**，並不會讀取 `HOGER_PORT`。若要換一個實際監聽埠，除了設定 `HOGER_PORT`（讓 `/api/mcp-config` 產生的 HTTP 設定片段正確），還要同步修改 `run_hoger.ps1` 裡的 `--port` 參數（或改用你自己的 uvicorn 指令），兩邊沒有自動同步。
+**注意**：`run_hoger.ps1` 會讀取 `HOGER_PORT`（未設定時預設 8600）作為 uvicorn 監聽埠，與 `/api/mcp-config` 產生的 HTTP 設定片段自動同步——設定一個環境變數即可換埠。若改用自己的 uvicorn 指令啟動，記得讓 `--port` 與 `HOGER_PORT` 一致。
 
 ---
 
@@ -185,6 +185,7 @@ HOGER 的 MCP Server 同時以 **Streamable HTTP** 掛載在 FastAPI 的 `/mcp` 
 - **幾何**（`kind == "geometry"`）：是一個物件，二擇一提供：
   - `{"file_3dm": "C:\\path\\model.3dm", "layer": "選填圖層名"}` — 從指定 `.3dm` 檔案讀取幾何（`layer` 可省略；省略時取檔案內所有物件）。若指定的 `layer` 在檔案中不存在，或 required 參數讀不到任何物件，會回傳參數錯誤。
   - `{"encoded": ["<rhino3dm JSON 編碼字串>", "..."]}` — 直接提供已用 rhino3dm 編碼（`.Encode()` 後 `json.dumps()`）的幾何物件字串陣列，供既有工具鏈（例如 C# 外掛）串接使用。
+  - 兩個 key 同時出現時以 `encoded` 優先；但 `"encoded": null`（JSON 客戶端常對未用欄位送 null）視同未提供，會改走 `file_3dm`；`"encoded": []`（空陣列）則視為「明確給了空幾何」——required 參數會回參數錯誤，選填參數會被略過。
 
 範例（呼叫一個名為 `radiation-study` 的工具）：
 
