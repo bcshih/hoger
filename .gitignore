@@ -11,3 +11,4 @@ dist/
 build/
 .env
 .env.local
+generated/mcp_config/*.snippet.json
