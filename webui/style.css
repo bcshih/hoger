@@ -1,0 +1,467 @@
+/* ==========================================================================
+   HOGER — Web UI
+   風格：暗色工程控制台。基準色為深藍鐵灰，強調色為訊號黃（施工警示色系）與
+   電路綠。字體用系統等寬堆疊（Cascadia/Consolas/SF Mono）呈現資料，標題用
+   系統無襯線但拉寬字距做成「銘牌」感。全離線、無外部資源。
+   ========================================================================== */
+
+/* 刻意不使用 @font-face / 外部字型檔——完全仰賴系統字型堆疊，
+   維持「無需 build step、完全離線可用」的限制。*/
+
+:root {
+  --font-display: "Cascadia Code", "Segoe UI Semibold", "Segoe UI", "Yu Gothic UI", sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", "SF Mono", "Courier New", monospace;
+  --font-ui: "Segoe UI", "Microsoft JhengHei UI", "PingFang TC", sans-serif;
+
+  /* base palette — deep blue-slate steel */
+  --bg-0: #0b0f14;
+  --bg-1: #10161d;
+  --bg-2: #161d26;
+  --bg-3: #1d2630;
+  --line: #263241;
+  --line-soft: #1a222c;
+
+  --ink-0: #eef3f7;
+  --ink-1: #b7c3cf;
+  --ink-2: #7c8998;
+  --ink-3: #526070;
+
+  /* signal colors */
+  --signal-amber: #f2a93b;
+  --signal-amber-dim: #7a5a24;
+  --signal-green: #55d68a;
+  --signal-green-dim: #245b3f;
+  --signal-red: #f2543b;
+  --signal-red-dim: #6b2a20;
+  --signal-blue: #4fb2e8;
+
+  --radius: 3px;
+  --shadow-deep: 0 20px 60px -20px rgba(0, 0, 0, 0.65);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(79, 178, 232, 0.06), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(242, 169, 59, 0.05), transparent 55%),
+    var(--bg-0);
+  color: var(--ink-0);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100%;
+}
+
+/* faint left rail — a nod to a plotter margin / drawing sheet border */
+.rail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--signal-amber) 0px,
+    var(--signal-amber) 2px,
+    transparent 2px,
+    transparent 14px
+  );
+  opacity: 0.35;
+  z-index: 50;
+}
+
+/* ── header ───────────────────────────────────────────────────────── */
+
+.hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 32px 20px 40px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--bg-1), var(--bg-0));
+}
+
+.hdr-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.hdr-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  background: linear-gradient(155deg, var(--bg-3), var(--bg-2));
+  border: 1px solid var(--line);
+  color: var(--signal-amber);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  box-shadow: inset 0 0 0 1px rgba(242, 169, 59, 0.08);
+}
+
+.hdr-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hdr-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--ink-0);
+}
+
+.hdr-subtitle {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  letter-spacing: 0.02em;
+}
+
+/* ── status lamps ─────────────────────────────────────────────────── */
+
+.hdr-status {
+  display: flex;
+  gap: 10px;
+}
+
+.lamp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  cursor: default;
+  font-family: var(--font-ui);
+  color: var(--ink-1);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.lamp-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  box-shadow: 0 0 0 3px transparent;
+  transition: background 160ms ease, box-shadow 160ms ease;
+  flex-shrink: 0;
+}
+
+.lamp-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-1);
+}
+
+.lamp-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-2);
+  border: 1px solid var(--line-soft);
+}
+
+.lamp[data-state="ok"] .lamp-dot {
+  background: var(--signal-green);
+  box-shadow: 0 0 0 3px rgba(85, 214, 138, 0.16), 0 0 10px 1px rgba(85, 214, 138, 0.55);
+}
+.lamp[data-state="ok"] .lamp-text {
+  color: var(--signal-green);
+  border-color: var(--signal-green-dim);
+  background: rgba(85, 214, 138, 0.08);
+}
+
+.lamp[data-state="bad"] .lamp-dot {
+  background: var(--signal-red);
+  box-shadow: 0 0 0 3px rgba(242, 84, 59, 0.16), 0 0 10px 1px rgba(242, 84, 59, 0.55);
+}
+.lamp[data-state="bad"] .lamp-text {
+  color: var(--signal-red);
+  border-color: var(--signal-red-dim);
+  background: rgba(242, 84, 59, 0.08);
+}
+
+.lamp[data-state="unknown"] .lamp-dot {
+  background: var(--ink-3);
+}
+
+/* ── compute-down banner ──────────────────────────────────────────── */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 40px;
+  background: linear-gradient(90deg, rgba(242, 169, 59, 0.14), rgba(242, 169, 59, 0.05));
+  border-bottom: 1px solid var(--signal-amber-dim);
+  color: #ffd48a;
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+.banner-icon {
+  color: var(--signal-amber);
+  font-size: 14px;
+}
+
+/* ── tabs ─────────────────────────────────────────────────────────── */
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 32px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 14px 22px;
+  text-decoration: none;
+  color: var(--ink-2);
+  border-bottom: 2px solid transparent;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.tab:hover {
+  color: var(--ink-0);
+  background: var(--bg-2);
+}
+
+.tab-index {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.tab-name {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.tab-en {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  letter-spacing: 0.02em;
+}
+
+.tab.active {
+  color: var(--signal-amber);
+  border-bottom-color: var(--signal-amber);
+  background: var(--bg-2);
+}
+
+.tab.active .tab-index {
+  color: var(--signal-amber);
+}
+
+.tab.active .tab-en {
+  color: var(--ink-1);
+}
+
+/* ── main view ────────────────────────────────────────────────────── */
+
+.view {
+  padding: 36px 40px 80px;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.view-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 28px;
+}
+
+.view-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--signal-amber);
+}
+
+.view-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink-0);
+}
+
+.view-desc {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+
+/* placeholder cards used by convert/manager/tester modules until they
+   ship in later tasks */
+.placeholder-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 48px 40px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 2px,
+      transparent 2px,
+      transparent 14px
+    ),
+    var(--bg-1);
+}
+
+.placeholder-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--bg-0);
+  background: var(--signal-amber);
+  padding: 3px 9px;
+  border-radius: 2px;
+  font-weight: 700;
+}
+
+.placeholder-card h2 {
+  margin: 6px 0 0;
+  font-size: 18px;
+  color: var(--ink-0);
+}
+
+.placeholder-card p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  max-width: 56ch;
+  line-height: 1.7;
+}
+
+/* ── toasts ───────────────────────────────────────────────────────── */
+
+.toast-stack {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 100;
+  width: min(360px, calc(100vw - 48px));
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-deep);
+  font-size: 13px;
+  color: var(--ink-0);
+  animation: toast-in 180ms ease-out;
+}
+
+.toast-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.toast[data-type="error"] {
+  border-color: var(--signal-red-dim);
+}
+.toast[data-type="error"] .toast-dot {
+  background: var(--signal-red);
+}
+
+.toast[data-type="success"] {
+  border-color: var(--signal-green-dim);
+}
+.toast[data-type="success"] .toast-dot {
+  background: var(--signal-green);
+}
+
+.toast[data-type="info"] {
+  border-color: var(--line);
+}
+.toast[data-type="info"] .toast-dot {
+  background: var(--signal-blue);
+}
+
+.toast.leaving {
+  animation: toast-out 160ms ease-in forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ── responsive ───────────────────────────────────────────────────── */
+
+@media (max-width: 720px) {
+  .hdr {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 18px 20px;
+  }
+  .tabs {
+    padding: 0 12px;
+    overflow-x: auto;
+  }
+  .view {
+    padding: 24px 18px 60px;
+  }
+  .banner {
+    padding: 10px 20px;
+  }
+}

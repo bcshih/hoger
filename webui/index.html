@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HOGER — GH → Hops + MCP 工具鏈</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<div class="rail" aria-hidden="true"></div>
+
+<header class="hdr">
+  <div class="hdr-brand">
+    <span class="hdr-mark">HG</span>
+    <div class="hdr-titles">
+      <h1 class="hdr-title">HOGER</h1>
+      <p class="hdr-subtitle">GH → Hops + MCP 工具鏈</p>
+    </div>
+  </div>
+
+  <div class="hdr-status" id="status-bar">
+    <button class="lamp" id="lamp-hoger" type="button" data-state="unknown" title="HOGER 服務狀態">
+      <span class="lamp-dot" aria-hidden="true"></span>
+      <span class="lamp-label">HOGER</span>
+      <span class="lamp-text" id="lamp-hoger-text">檢查中</span>
+    </button>
+    <button class="lamp" id="lamp-compute" type="button" data-state="unknown" title="Rhino.Compute 狀態">
+      <span class="lamp-dot" aria-hidden="true"></span>
+      <span class="lamp-label">Rhino.Compute</span>
+      <span class="lamp-text" id="lamp-compute-text">檢查中</span>
+    </button>
+  </div>
+</header>
+
+<div class="banner" id="compute-banner" hidden>
+  <span class="banner-icon" aria-hidden="true">&#9888;</span>
+  <span>Rhino.Compute 未啟動——請先啟動 compute.geometry（localhost:5000）</span>
+</div>
+
+<nav class="tabs" aria-label="主要頁籤">
+  <a class="tab" href="#/convert" data-route="convert">
+    <span class="tab-index">01</span>
+    <span class="tab-name">轉換</span>
+    <span class="tab-en">Import &amp; Convert</span>
+  </a>
+  <a class="tab" href="#/manager" data-route="manager">
+    <span class="tab-index">02</span>
+    <span class="tab-name">工具管理</span>
+    <span class="tab-en">Tool Manager</span>
+  </a>
+  <a class="tab" href="#/tester" data-route="tester">
+    <span class="tab-index">03</span>
+    <span class="tab-name">測試</span>
+    <span class="tab-en">Test Harness</span>
+  </a>
+</nav>
+
+<main class="view" id="view"></main>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
