@@ -30,6 +30,7 @@ from hoger.config import GH_FILES_DIR, HOGER_PORT, ROOT, TOOLS_DIR
 from hoger.core import compute_client, executor
 from hoger.core.compute_client import ComputeError
 from hoger.core.manifest import ToolManifest, manifest_from_io, to_mcp_tool
+from hoger.mcp_server import config_gen
 from hoger.store import tool_store
 
 router = APIRouter(prefix="/api")
@@ -229,24 +230,6 @@ def run_tool(tool_id: str, body: RunToolBody, debug: bool = Query(False)):
 
 @router.get("/mcp-config")
 def get_mcp_config():
-    # Windows venv 佈局（.venv/Scripts/python.exe）；本專案目標環境為 Windows
-    # （Rhino 僅支援 Windows/macOS，此處假設 Windows），跨平台時需改
-    # .venv/bin/python。
-    venv_python = str(ROOT / ".venv" / "Scripts" / "python.exe")
-    return {
-        "stdio": {
-            "mcpServers": {
-                "hoger": {
-                    "command": venv_python,
-                    "args": ["-m", "hoger.mcp_server.stdio_main"],
-                    "cwd": str(ROOT),
-                    "env": {"HOGER_COMPUTE_URL": config.COMPUTE_URL},
-                }
-            }
-        },
-        "http": {
-            "mcpServers": {
-                "hoger": {"url": f"http://localhost:{HOGER_PORT}/mcp"},
-            }
-        },
-    }
+    # 每次查詢都刷新落地檔——確保 snippet JSON 總是與當前設定同步。
+    config_gen.write_mcp_config_snippet()
+    return config_gen.build_mcp_config()
