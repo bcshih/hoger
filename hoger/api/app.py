@@ -48,6 +48,8 @@ from hoger.store.tool_store import ToolNotFound
 # 保留狀態——HOGER 的工具清單本來就無快取、每次直接讀磁碟（見
 # hoger.mcp_server.server 模組說明），MCP 這層也不需要額外的 session 狀態。
 # json_response=False：保留 SSE streaming 能力（Streamable HTTP 的預設行為）。
+# ⚠️ StreamableHTTPSessionManager.run() 每個 instance 只能進入一次——同一進程內
+# 不可二次啟動本 app 的 lifespan（uvicorn reload / 多次 TestClient with-lifespan 會踩到）。
 mcp_session_manager = StreamableHTTPSessionManager(
     app=mcp_server,
     json_response=False,
@@ -63,7 +65,7 @@ class _McpExactPathRewrite:
     """把恰好 "/mcp" 的請求路徑改寫成 "/mcp/"，讓 Mount("/mcp") 能匹配。
 
     背景見模組 docstring「精確路徑 '/mcp' 的特例」段落。純 ASGI middleware，
-    只改 scope["path"]，不碰 request/response body。
+    只改 scope["path"] 和 scope["raw_path"]，不碰 request/response body。
     """
 
     def __init__(self, app):
@@ -71,7 +73,8 @@ class _McpExactPathRewrite:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http" and scope.get("path") == "/mcp":
-            scope = {**scope, "path": "/mcp/"}
+            # 同步更新 path 和 raw_path 以保持 ASGI spec 一致性
+            scope = {**scope, "path": "/mcp/", "raw_path": b"/mcp/"}
         await self.app(scope, receive, send)
 
 

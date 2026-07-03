@@ -150,9 +150,10 @@ def test_mcp_streamable_http_end_to_end(tmp_path):
         ready = False
         while time.monotonic() < deadline:
             if not thread.is_alive():
-                # 最可能原因：_free_port() 探測到的 port 在 uvicorn bind 前被
-                # 其他行程搶走（TOCTOU race），uvicorn 啟動失敗、thread 結束。
-                pytest.fail("uvicorn thread 在啟動完成前就結束（port 可能被搶走）")
+                # 兩種可能原因：(1) _free_port() 探測到的 port 在 uvicorn bind 前被
+                # 其他行程搶走（TOCTOU race），uvicorn 啟動失敗；(2) session_manager.run()
+                # 被二次進入，拋 RuntimeError（發生於同進程重複啟動 app）。
+                pytest.fail("uvicorn thread 在啟動完成前就結束（port 被搶 或 session_manager.run() 二次進入）")
             if server.started:
                 try:
                     resp = httpx.get(f"{base_url}/api/tools", timeout=2)
@@ -181,4 +182,5 @@ def test_mcp_streamable_http_end_to_end(tmp_path):
     finally:
         server.should_exit = True
         thread.join(timeout=5)
+        assert not thread.is_alive(), "uvicorn thread 未在 5s 內停止"
         hoger_config.TOOLS_DIR = original_tools_dir
