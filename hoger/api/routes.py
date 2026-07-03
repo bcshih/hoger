@@ -68,12 +68,30 @@ def _import_from_gh_path(gh_path: str) -> ToolManifest:
     return manifest_from_io(gh_path, io_response)
 
 
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50MB；本工具僅供 localhost 單人使用，
+# 信任模型是「執行此程式的人」而非「任意遠端使用者」，此上限只是防呆
+# （避免不慎上傳超大檔案拖垮磁碟/記憶體），不是對抗惡意使用者的防線。
+
+
 def _save_upload_and_import(filename: str, content: bytes) -> dict:
     """阻塞工作（檔案寫入 + Rhino.Compute 呼叫）：丟到 threadpool 執行。"""
-    if not filename.lower().endswith(".gh"):
-        raise HTTPException(status_code=400, detail="only .gh files are supported")
+    if not filename:
+        raise HTTPException(status_code=400, detail="missing filename")
 
-    dest = GH_FILES_DIR / filename
+    # 消毒檔名，防止路徑逃逸（"../escaped.gh"）或絕對路徑（"C:/x/evil.gh"）
+    # 蓋過 GH_FILES_DIR 以外的檔案：統一分隔符後只取 basename，再確認落點
+    # 仍在 GH_FILES_DIR 內（雙重防禦，避免 symlink 等邊角案例繞過）。
+    safe_name = Path(filename.replace("\\", "/")).name
+    if not safe_name or not safe_name.lower().endswith(".gh"):
+        raise HTTPException(status_code=400, detail="filename must be a plain *.gh file name")
+
+    dest = (GH_FILES_DIR / safe_name).resolve()
+    if not dest.is_relative_to(GH_FILES_DIR.resolve()):
+        raise HTTPException(status_code=400, detail="invalid filename")
+
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="file too large (max 50MB)")
+
     with open(dest, "wb") as f:
         f.write(content)
 
@@ -106,8 +124,10 @@ async def import_gh_file(request: Request):
     if content_type.startswith("multipart/form-data"):
         form = await request.form()
         upload = form.get("file")
-        if upload is None:
-            raise HTTPException(status_code=400, detail="missing 'file' in multipart body")
+        # 空檔名（filename=""）時，starlette 會把這個欄位解析成普通字串而非
+        # UploadFile（沒有 .filename/.read()）；一併視為「缺少檔名」。
+        if upload is None or not hasattr(upload, "filename"):
+            raise HTTPException(status_code=400, detail="missing filename")
 
         content = await upload.read()
         return await run_in_threadpool(_save_upload_and_import, upload.filename, content)
@@ -122,6 +142,11 @@ async def import_gh_file(request: Request):
 
 
 # ── tools CRUD ───────────────────────────────────────────────────────
+
+
+def _get_or_404(tool_id: str) -> ToolManifest:
+    """tool_store.get 的薄封裝：查無此工具時拋 ToolNotFound -> 全域 handler 轉 404。"""
+    return tool_store.get(tool_id, tools_dir=TOOLS_DIR)
 
 
 @router.get("/tools")
@@ -156,7 +181,7 @@ def create_tool(manifest: ToolManifest):
 
 @router.get("/tools/{tool_id}")
 def get_tool(tool_id: str):
-    manifest = tool_store.get(tool_id, tools_dir=TOOLS_DIR)
+    manifest = _get_or_404(tool_id)
     return {"manifest": manifest.model_dump(), "mcp_schema": to_mcp_tool(manifest)}
 
 
@@ -168,7 +193,7 @@ def update_tool(tool_id: str, manifest: ToolManifest):
             detail=f"path id {tool_id!r} does not match body id {manifest.id!r}",
         )
     # 工具必須已存在；不存在時 tool_store.get 拋 ToolNotFound -> 全域 handler 轉 404
-    tool_store.get(tool_id, tools_dir=TOOLS_DIR)
+    _get_or_404(tool_id)
     tool_store.save(manifest, tools_dir=TOOLS_DIR)
     return manifest.model_dump()
 
@@ -183,7 +208,7 @@ def delete_tool(tool_id: str):
 
 @router.post("/tools/{tool_id}/run")
 def run_tool(tool_id: str, body: RunToolBody, debug: bool = Query(False)):
-    manifest = tool_store.get(tool_id, tools_dir=TOOLS_DIR)
+    manifest = _get_or_404(tool_id)
     result = executor.run_tool(manifest, body.args)
 
     response = {
@@ -204,6 +229,9 @@ def run_tool(tool_id: str, body: RunToolBody, debug: bool = Query(False)):
 
 @router.get("/mcp-config")
 def get_mcp_config():
+    # Windows venv 佈局（.venv/Scripts/python.exe）；本專案目標環境為 Windows
+    # （Rhino 僅支援 Windows/macOS，此處假設 Windows），跨平台時需改
+    # .venv/bin/python。
     venv_python = str(ROOT / ".venv" / "Scripts" / "python.exe")
     return {
         "stdio": {

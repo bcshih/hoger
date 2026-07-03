@@ -187,6 +187,78 @@ def test_import_rejects_non_gh_extension_multipart(client):
     assert resp.status_code == 400
 
 
+def test_import_multipart_empty_filename_returns_400(client):
+    resp = client.post(
+        "/api/import",
+        files={"file": ("", b"data", "application/octet-stream")},
+    )
+    assert resp.status_code == 400
+
+
+def test_import_multipart_sanitizes_path_traversal_filename(client, monkeypatch, isolated_dirs, tmp_path):
+    monkeypatch.setattr(
+        "hoger.api.routes.compute_client.io_query", lambda p: _io_sample()
+    )
+
+    resp = client.post(
+        "/api/import",
+        files={"file": ("../escaped.gh", b"content", "application/octet-stream")},
+    )
+    assert resp.status_code == 200
+
+    # 消毒後應落在 GH_FILES_DIR 內，檔名為去除目錄成分後的 basename
+    saved = isolated_dirs["gh_dir"] / "escaped.gh"
+    assert saved.exists()
+    assert saved.read_bytes() == b"content"
+
+    # GH_FILES_DIR 的父目錄（tmp_path）不應該有逃逸出去的檔案
+    assert not (tmp_path / "escaped.gh").exists()
+
+
+def test_import_multipart_sanitizes_windows_absolute_path_filename(client, monkeypatch, isolated_dirs):
+    monkeypatch.setattr(
+        "hoger.api.routes.compute_client.io_query", lambda p: _io_sample()
+    )
+
+    resp = client.post(
+        "/api/import",
+        files={"file": ("C:\\evil.gh", b"content", "application/octet-stream")},
+    )
+    assert resp.status_code == 200
+
+    saved = isolated_dirs["gh_dir"] / "evil.gh"
+    assert saved.exists()
+    assert saved.read_bytes() == b"content"
+
+    # 沒有任何檔案寫到 GH_FILES_DIR 以外（例如 C:\evil.gh 本身）
+    assert not Path("C:\\evil.gh").exists()
+
+
+def test_import_multipart_no_files_outside_gh_dir(client, monkeypatch, isolated_dirs, tmp_path):
+    """路徑逃逸/絕對路徑檔名消毒後，GH_FILES_DIR 外不應出現任何新檔案。"""
+    monkeypatch.setattr(
+        "hoger.api.routes.compute_client.io_query", lambda p: _io_sample()
+    )
+
+    before = set(tmp_path.rglob("*"))
+
+    client.post(
+        "/api/import",
+        files={"file": ("../escaped.gh", b"content", "application/octet-stream")},
+    )
+    client.post(
+        "/api/import",
+        files={"file": ("C:\\evil.gh", b"content", "application/octet-stream")},
+    )
+
+    after = set(tmp_path.rglob("*"))
+    new_files = after - before
+    # 所有新增的檔案/目錄都必須落在 gh_dir 內
+    gh_dir = isolated_dirs["gh_dir"]
+    for p in new_files:
+        assert gh_dir in p.parents or p == gh_dir
+
+
 # ── POST /api/tools, GET /api/tools ──────────────────────────────────
 
 
