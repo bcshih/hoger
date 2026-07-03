@@ -12,17 +12,7 @@
 // 送出註冊時才從 draft 物件組 payload。
 
 import { api, toast } from "./api.js";
-
-const ID_PATTERN = /^[a-z0-9-]+$/;
-const ID_HINT = "僅限小寫字母、數字、連字號（^[a-z0-9-]+$）。";
-
-const KIND_LABELS = {
-  number: "number",
-  integer: "integer",
-  boolean: "boolean",
-  string: "string",
-  geometry: "geometry",
-};
+import { escapeHtml, kindBadge, validateId, bindEditableCells, ID_HINT } from "./ui-common.js";
 
 // stage: "import" | "review" | "done"
 const STATE = {
@@ -73,12 +63,6 @@ function render() {
     stageEl.innerHTML = renderDoneStage();
     bindDoneStage(stageEl);
   }
-}
-
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (ch) => (
-    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]
-  ));
 }
 
 // ── stage 1: import ──────────────────────────────────────────────────
@@ -278,11 +262,6 @@ function onImportError(err) {
 
 // ── stage 2: review ──────────────────────────────────────────────────
 
-function kindBadge(kind) {
-  const label = KIND_LABELS[kind] || kind || "unknown";
-  return `<span class="kind-badge" data-kind="${escapeHtml(kind || "unknown")}">${escapeHtml(label)}</span>`;
-}
-
 function renderReviewStage() {
   const d = STATE.draft;
   const idErrorClass = STATE.idError ? "input-invalid" : "";
@@ -415,12 +394,6 @@ function renderReviewStage() {
   `;
 }
 
-function validateId(value) {
-  if (!value) return "id 不可為空";
-  if (!ID_PATTERN.test(value)) return "格式不符：僅限小寫字母、數字、連字號";
-  return "";
-}
-
 function bindReviewStage(stageEl) {
   const idInput = stageEl.querySelector("#draft-id");
   const idMsg = stageEl.querySelector("#draft-id-msg");
@@ -461,44 +434,6 @@ function bindReviewStage(stageEl) {
 
   stageEl.querySelector("#register-btn").addEventListener("click", () => {
     registerDraft("registered");
-  });
-}
-
-// numericFields: 欄位名要嘗試轉成 number（空字串轉 null）
-function bindEditableCells(tbody, list, numericFields) {
-  if (!tbody) return;
-  tbody.querySelectorAll(".cell-input").forEach((input) => {
-    input.addEventListener("input", () => {
-      const idx = Number(input.dataset.idx);
-      const field = input.dataset.field;
-      const item = list[idx];
-      if (!item) return;
-
-      if (field === "default") {
-        const raw = input.value.trim();
-        item.default = raw === "" ? null : isNaN(Number(raw)) ? raw : Number(raw);
-        return;
-      }
-
-      if (numericFields.includes(field)) {
-        const raw = input.value.trim();
-        if (raw === "") {
-          item[field] = null;
-          input.classList.remove("input-invalid");
-          return;
-        }
-        const num = Number(raw);
-        if (isNaN(num)) {
-          input.classList.add("input-invalid");
-          return;
-        }
-        input.classList.remove("input-invalid");
-        item[field] = num;
-        return;
-      }
-
-      item[field] = input.value;
-    });
   });
 }
 
