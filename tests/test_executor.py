@@ -28,6 +28,7 @@ from hoger.core.executor import (
     _load_geometry_from_3dm,
     build_trees,
     run_tool,
+    run_tool_raw,
 )
 from hoger.core.manifest import InputSpec, OutputSpec, ToolManifest
 
@@ -515,3 +516,133 @@ def test_run_tool_outputs_with_no_geometry_or_string_has_no_3dm(tmp_path, monkey
     result = run_tool(manifest, {}, out_dir=tmp_path)
     assert result.result_3dm is None
     assert result.outputs == {"total": [1.0]}
+
+
+# ── run_tool_raw ──────────────────────────────────────────────────────
+
+
+def test_run_tool_raw_passes_values_through_unchanged(tmp_path, monkeypatch):
+    """
+    關鍵規則：Hops 送來的 raw_values 必須原樣 passthrough 給
+    compute_client.evaluate，不 decode/re-encode（build_trees 完全不參與）。
+    """
+    manifest = _make_manifest(
+        inputs=[InputSpec(param_name="width", kind="number", required=True)],
+        outputs=[OutputSpec(param_name="total", kind="number")],
+    )
+
+    raw_values = [
+        {
+            "ParamName": "width",
+            "InnerTree": {"{0}": [{"type": "System.Double", "data": "3.5"}]},
+        }
+    ]
+
+    fake_response = _gh_response(
+        [("RH_OUT:total", [{"type": "System.Double", "data": "9.5"}])]
+    )
+
+    captured = {}
+
+    def fake_evaluate(gh_path, tree_payloads):
+        captured["gh_path"] = gh_path
+        captured["payloads"] = tree_payloads
+        return fake_response
+
+    monkeypatch.setattr("hoger.core.executor.compute_client.evaluate", fake_evaluate)
+
+    result = run_tool_raw(manifest, raw_values, out_dir=tmp_path)
+
+    # passthrough：同一物件、同一結構，未被 build_trees 改寫或重建
+    assert captured["payloads"] is raw_values
+    assert captured["payloads"] == raw_values
+    assert captured["gh_path"] == manifest.gh_file
+    assert result.outputs["total"] == [9.5]
+
+
+def test_run_tool_raw_shape_matches_run_tool(tmp_path, monkeypatch):
+    """ToolResult 形狀（outputs JSON-safe/result_3dm/elapsed_ms/errors/warnings/modelunits/raw）
+    與 run_tool 一致——共用同一組私有實作，僅 tree 來源不同。"""
+    manifest = _make_manifest(
+        inputs=[],
+        outputs=[
+            OutputSpec(param_name="total", kind="number"),
+            OutputSpec(param_name="report", kind="string"),
+            OutputSpec(param_name="Mesh", kind="geometry"),
+        ],
+    )
+
+    mesh = _mesh()
+    fake_response = _gh_response(
+        [
+            ("RH_OUT:total", [{"type": "System.Double", "data": "9.5"}]),
+            (
+                "RH_OUT:report",
+                [{"type": "System.String", "data": json.dumps("done")}],
+            ),
+            (
+                "RH_OUT:Mesh",
+                [{"type": "Rhino.Geometry.Mesh", "data": json.dumps(mesh.Encode())}],
+            ),
+        ]
+    )
+    fake_response["modelunits"] = "mm"
+
+    monkeypatch.setattr(
+        "hoger.core.executor.compute_client.evaluate", lambda gh_path, trees: fake_response
+    )
+
+    result = run_tool_raw(manifest, [], out_dir=tmp_path)
+
+    assert isinstance(result, ToolResult)
+    assert result.outputs["total"] == [9.5]
+    assert result.outputs["report"] == ["done"]
+    assert result.outputs["Mesh"] == {"count": 1, "in_3dm": True}
+    assert result.result_3dm is not None
+    assert result.elapsed_ms >= 0
+    assert result.errors == []
+    assert result.warnings == []
+    assert result.modelunits == "mm"
+    assert result.raw is fake_response
+    json.dumps(result.outputs)
+
+
+def test_run_tool_raw_compute_error_does_not_crash(tmp_path, monkeypatch):
+    manifest = _make_manifest(
+        inputs=[],
+        outputs=[OutputSpec(param_name="total", kind="number")],
+    )
+
+    def fake_evaluate(gh_path, tree_payloads):
+        raise ComputeError("Rhino.Compute HTTP 500: boom", status_code=500, body="boom body")
+
+    monkeypatch.setattr("hoger.core.executor.compute_client.evaluate", fake_evaluate)
+
+    result = run_tool_raw(manifest, [], out_dir=tmp_path)
+
+    assert result.outputs == {"total": []}
+    assert result.result_3dm is None
+    assert len(result.errors) == 1
+    assert "boom" in result.errors[0]
+    assert result.raw == {"error_status_code": 500, "error_body": "boom body"}
+    json.dumps(result.outputs)
+    json.dumps(result.raw)
+
+
+def test_run_tool_raw_does_not_call_build_trees(tmp_path, monkeypatch):
+    # build_trees 不應被呼叫——raw_values 直接當 tree_payloads 使用
+    manifest = _make_manifest(
+        inputs=[InputSpec(param_name="width", kind="number", required=True)],
+        outputs=[],
+    )
+
+    def fail_build_trees(*args, **kwargs):
+        raise AssertionError("build_trees should not be called by run_tool_raw")
+
+    monkeypatch.setattr("hoger.core.executor.build_trees", fail_build_trees)
+    monkeypatch.setattr(
+        "hoger.core.executor.compute_client.evaluate", lambda gh_path, trees: {"values": []}
+    )
+
+    # 沒有提供 "width"，若誤走 build_trees 會因 required 缺值而 raise ToolArgError
+    run_tool_raw(manifest, [], out_dir=tmp_path)

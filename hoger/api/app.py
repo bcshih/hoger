@@ -16,9 +16,10 @@ context manager，在 app 啟動時進入 session_manager.run()、app 關閉時
 
 掛載順序（重要）：
 1. app.include_router(api_router)  — /api/* 端點
-2. app.mount("/mcp", ...)          — MCP Streamable HTTP
-3. app.mount("/", StaticFiles(...)) — 必須最後：掛在 "/" 會攔截所有未被
-   前面路由匹配到的路徑，若先掛載會蓋掉 /api/* 與 /mcp。
+2. app.include_router(hops_router) — /hops/* 端點（Grasshopper Hops 元件直連）
+3. app.mount("/mcp", ...)          — MCP Streamable HTTP
+4. app.mount("/", StaticFiles(...)) — 必須最後：掛在 "/" 會攔截所有未被
+   前面路由匹配到的路徑，若先掛載會蓋掉 /api/*、/hops/* 與 /mcp。
 
 精確路徑 "/mcp"（無結尾斜線）的特例：Starlette 的 Mount("/mcp") 用 regex
 "^/mcp/(?P<path>.*)$" 匹配，精確的 "/mcp" 匹配不到；正常情況 Router 的
@@ -41,6 +42,7 @@ from starlette.staticfiles import StaticFiles
 from hoger import config
 from hoger.api.routes import router as api_router
 from hoger.core.executor import ToolArgError
+from hoger.hops.hops_routes import router as hops_router
 from hoger.mcp_server.server import server as mcp_server
 from hoger.store.tool_store import ToolNotFound
 
@@ -101,6 +103,7 @@ def _tool_arg_error_handler(request: Request, exc: ToolArgError):
 app.add_middleware(_McpExactPathRewrite)
 
 app.include_router(api_router)
+app.include_router(hops_router)
 app.mount("/mcp", _mcp_asgi_app)
 
 webui_dir = config.ROOT / "webui"

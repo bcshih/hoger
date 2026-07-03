@@ -236,19 +236,22 @@ def _json_safe_outputs(parsed: dict, manifest: ToolManifest, result_3dm: Optiona
     return outputs
 
 
-def run_tool(manifest: ToolManifest, args: dict, out_dir=None) -> ToolResult:
+def _evaluate_and_build_result(
+    manifest: ToolManifest, tree_payloads: list, out_dir=None
+) -> ToolResult:
     """
-    使用者參數 -> DataTree -> Rhino.Compute 執行 -> ToolResult。
+    tree_payloads -> Rhino.Compute 執行 -> ToolResult。
 
-    ToolArgError（build_trees 產生）往外拋——是呼叫端的參數錯誤。
+    run_tool()（build_trees 產生的 payload）與 run_tool_raw()（Hops solve
+    原樣 passthrough 的 payload）共用的核心邏輯——兩者差異只在 tree_payloads
+    的來源，執行、解析、寫檔、錯誤處理完全一致，故抽出本函式避免重複。
+
     ComputeError（compute_client.evaluate 產生）不往外拋——回傳帶 errors 的
     ToolResult，讓呼叫端決定如何呈現給使用者（Compute 掛掉不該讓整個服務崩潰）。
     """
-    trees = build_trees(manifest, args)
-
     t0 = time.perf_counter()
     try:
-        res = compute_client.evaluate(manifest.gh_file, trees)
+        res = compute_client.evaluate(manifest.gh_file, tree_payloads)
     except ComputeError as exc:
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
         # outputs 形狀必須與正常路徑一致：geometry kind 是 dict
@@ -285,3 +288,28 @@ def run_tool(manifest: ToolManifest, args: dict, out_dir=None) -> ToolResult:
         modelunits=modelunits,
         raw=res,
     )
+
+
+def run_tool(manifest: ToolManifest, args: dict, out_dir=None) -> ToolResult:
+    """
+    使用者參數 -> DataTree -> Rhino.Compute 執行 -> ToolResult。
+
+    ToolArgError（build_trees 產生）往外拋——是呼叫端的參數錯誤。
+    """
+    trees = build_trees(manifest, args)
+    return _evaluate_and_build_result(manifest, trees, out_dir)
+
+
+def run_tool_raw(manifest: ToolManifest, raw_values: list, out_dir=None) -> ToolResult:
+    """
+    Hops solve 的 raw values -> Rhino.Compute 執行 -> ToolResult。
+
+    raw_values 是 Grasshopper Hops 元件送來的 values 列表（每項已是
+    {"ParamName": ..., "InnerTree": {...}} 形狀），**原樣 passthrough**
+    給 compute_client.evaluate，不經過 build_trees、不 decode/re-encode——
+    生產環境驗證過：rhino3dm 往返會損壞部分 Brep。
+
+    其餘邏輯（parse/write_result_3dm/JSON-safe outputs/ComputeError 軟處理）
+    與 run_tool 共用 _evaluate_and_build_result，不重複實作。
+    """
+    return _evaluate_and_build_result(manifest, raw_values, out_dir)
