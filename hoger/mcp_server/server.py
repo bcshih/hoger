@@ -23,6 +23,14 @@ types.CallToolResult(isError=True, ...)：
    呼叫端（decorator 或測試）都拿到結構化的 CallToolResult，不必分別
    處理「拋例外」與「回傳值」兩種路徑。
 
+注意：直接 `await handle_call_tool(...)`（略過 SDK decorator 包裝，例如
+測試或其他 in-process 呼叫端）不會得到 decorator 那層 blanket
+`except Exception` 保護——handle_call_tool() 內部只明確 catch
+ToolArgError / ToolNotFound，其餘例外（例如 executor.run_tool 拋出的
+非預期錯誤）會原樣往外傳給直接呼叫端；只有真的透過 transport
+（stdio/HTTP）經過 SDK 的 call_tool decorator 時，第 589-590 行的
+`except Exception` 才會接住它並轉成 isError=True 的 CallToolResult。
+
 executor.run_tool() 是同步阻塞呼叫（HTTP 呼叫 Rhino.Compute + 檔案
 I/O），用 anyio.to_thread.run_sync 包起來，避免卡住 stdio transport 的
 event loop。

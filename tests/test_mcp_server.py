@@ -199,6 +199,26 @@ def test_call_tool_tool_arg_error_returns_message(tools_dir, monkeypatch):
     assert "missing required parameter: 'size'" in result.content[0].text
 
 
+def test_call_tool_unexpected_exception_propagates_when_called_directly(tools_dir, monkeypatch):
+    """
+    直接 await handle_call_tool(...)（略過 SDK decorator）時，未被明確
+    catch 的例外（這裡模擬 executor.run_tool 拋出非 ToolArgError/ToolNotFound
+    的 RuntimeError）應該原樣往外傳，而不是被靜默轉成 isError=True 的
+    CallToolResult——這個保護只存在於 SDK 的 call_tool decorator 包裝內
+    （見本檔案開頭 docstring 補充說明）。
+    """
+    manifest = make_manifest("cube-tool", status="registered")
+    tool_store.save(manifest, tools_dir=tools_dir)
+
+    def fake_run_tool(m, args, out_dir=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(mcp_server_module.executor, "run_tool", fake_run_tool)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        run(handle_call_tool("cube-tool", {}))
+
+
 # ── handle_call_tool: threading ──────────────────────────────────────
 
 
