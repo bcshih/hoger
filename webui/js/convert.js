@@ -14,6 +14,7 @@
 import { api, toast } from "./api.js";
 
 const ID_PATTERN = /^[a-z0-9-]+$/;
+const ID_HINT = "僅限小寫字母、數字、連字號（^[a-z0-9-]+$）。";
 
 const KIND_LABELS = {
   number: "number",
@@ -349,7 +350,7 @@ function renderReviewStage() {
           <div class="summary-field">
             <label class="field-label" for="draft-id">工具 id</label>
             <input type="text" id="draft-id" class="input-text mono ${idErrorClass}" value="${escapeHtml(d.id)}" />
-            ${STATE.idError ? `<p class="field-error">${escapeHtml(STATE.idError)}</p>` : `<p class="field-hint">僅限小寫字母、數字、連字號（^[a-z0-9-]+$）。</p>`}
+            <p id="draft-id-msg" class="${STATE.idError ? "field-error" : "field-hint"}">${escapeHtml(STATE.idError || ID_HINT)}</p>
           </div>
           <div class="summary-field">
             <label class="field-label" for="draft-display-name">顯示名稱</label>
@@ -422,28 +423,15 @@ function validateId(value) {
 
 function bindReviewStage(stageEl) {
   const idInput = stageEl.querySelector("#draft-id");
+  const idMsg = stageEl.querySelector("#draft-id-msg");
   idInput.addEventListener("input", () => {
     STATE.draft.id = idInput.value;
     STATE.idError = validateId(idInput.value);
     idInput.classList.toggle("input-invalid", Boolean(STATE.idError));
-    const errorEl = stageEl.querySelector(".field-error");
-    const hintEl = stageEl.querySelector(".summary-field .field-hint");
-    if (STATE.idError) {
-      if (errorEl) {
-        errorEl.textContent = STATE.idError;
-      } else {
-        idInput.insertAdjacentHTML("afterend", `<p class="field-error">${escapeHtml(STATE.idError)}</p>`);
-        hintEl?.remove();
-      }
-    } else {
-      errorEl?.remove();
-      if (!stageEl.querySelector(".summary-field .field-hint")) {
-        idInput.insertAdjacentHTML(
-          "afterend",
-          `<p class="field-hint">僅限小寫字母、數字、連字號（^[a-z0-9-]+$）。</p>`
-        );
-      }
-    }
+    // 訊息元素固定存在（render 時就放好），這裡只就地更新 class 與文字，
+    // 不做動態插入——快速輸入下也不可能重複。
+    idMsg.className = STATE.idError ? "field-error" : "field-hint";
+    idMsg.textContent = STATE.idError || ID_HINT;
   });
 
   stageEl.querySelector("#draft-display-name").addEventListener("input", (ev) => {
@@ -515,6 +503,14 @@ function bindEditableCells(tbody, list, numericFields) {
 }
 
 async function registerDraft(status) {
+  // 防護：畫面上任何標紅的欄位（id 格式錯誤、min/max 非數字等）都擋下註冊。
+  // 數字欄位輸入無效值時只標紅、不寫入 draft（見 bindEditableCells），若不
+  // 擋下會靜默用舊值送出。
+  if (root.querySelectorAll(".input-invalid").length > 0) {
+    toast("請先修正表格中標記為紅色的欄位", "error");
+    return;
+  }
+
   const idErr = validateId(STATE.draft.id);
   if (idErr) {
     STATE.idError = idErr;
