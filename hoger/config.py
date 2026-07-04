@@ -7,5 +7,6 @@ HOGER_PORT = int(os.environ.get("HOGER_PORT", "8600"))
 TOOLS_DIR = Path(os.environ.get("HOGER_TOOLS_DIR", ROOT / "tools"))
 RESULTS_DIR = Path(os.environ.get("HOGER_RESULTS_DIR", ROOT / "generated" / "results"))
 GH_FILES_DIR = Path(os.environ.get("HOGER_GH_DIR", ROOT / "gh_files"))
+GHIO_DLL = os.environ.get("HOGER_GHIO_DLL", r"C:\Program Files\Rhino 8\Plug-ins\Grasshopper\GH_IO.dll")
 for _d in (TOOLS_DIR, RESULTS_DIR, GH_FILES_DIR):
     _d.mkdir(parents=True, exist_ok=True)
