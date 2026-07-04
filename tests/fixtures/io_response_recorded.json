@@ -1,0 +1,191 @@
+{
+  "Description": "",
+  "FileName": "",
+  "CacheKey": "md5_E9930859A02F1593FF05A76A2ED2946F",
+  "InputNames": [
+    "_epw_file",
+    "_run",
+    "_geometry",
+    "context_",
+    "_start_month_",
+    "_start_day_",
+    "_start_hour_",
+    "_end_month_",
+    "_end_day_",
+    "_end_hour_",
+    "_timestep_",
+    "_grid_size"
+  ],
+  "OutputNames": [
+    "Mesh",
+    "Leg",
+    "RadV",
+    "debug"
+  ],
+  "Inputs": [
+    {
+      "Description": "",
+      "AtLeast": 1,
+      "AtMost": 1000,
+      "TreeAccess": true,
+      "Default": {
+        "ParamName": "Get String",
+        "InnerTree": {}
+      },
+      "Name": "_epw_file",
+      "ParamType": "Text"
+    },
+    {
+      "Description": "run simulation",
+      "AtLeast": 1,
+      "AtMost": 1,
+      "TreeAccess": true,
+      "Default": {
+        "ParamName": "Get Boolean",
+        "InnerTree": {}
+      },
+      "Name": "_run",
+      "ParamType": "Boolean"
+    },
+    {
+      "Description": "",
+      "AtLeast": 1,
+      "AtMost": 1,
+      "TreeAccess": false,
+      "Default": {
+        "ParamName": "Get Geometry",
+        "InnerTree": {}
+      },
+      "Name": "_geometry",
+      "ParamType": "Geometry"
+    },
+    {
+      "Description": "",
+      "AtLeast": 1,
+      "AtMost": 20,
+      "TreeAccess": true,
+      "Default": {
+        "ParamName": "Get Geometry",
+        "InnerTree": {}
+      },
+      "Name": "context_",
+      "ParamType": "Geometry"
+    },
+    {
+      "Description": "",
+      "AtLeast": 1,
+      "AtMost": 12,
+      "TreeAccess": false,
+      "Default": {
+        "ParamName": "Get Integer",
+        "InnerTree": {}
+      },
+      "Name": "_start_month_",
+      "ParamType": "Integer"
+    },
+    {
+      "Description": "",
+      "AtLeast": 1,
+      "AtMost": 31,
+      "TreeAccess": false,
+      "Default": {
+        "ParamName": "Get Integer",
+        "InnerTree": {}
+      },
+      "Name": "_start_day_",
+      "ParamType": "Integer"
+    },
+    {
+      "Description": "",
+      "AtLeast": 0,
+      "AtMost": 24,
+      "TreeAccess": false,
+      "Default": {
+        "ParamName": "Get Integer",
+        "InnerTree": {}
+      },
+      "Name": "_start_hour_",
+      "ParamType": "Integer"
+    },
+    {
+      "Description": "",
+      "AtLeast": 1,
+      "AtMost": 12,
+      "TreeAccess": false,
+      "Default": {
+        "ParamName": "Get Integer",
+        "InnerTree": {}
+      },
+      "Name": "_end_month_",
+      "ParamType": "Integer"
+    },
+    {
+      "Description": "",
+      "AtLeast": 1,
+      "AtMost": 31,
+      "TreeAccess": false,
+      "Default": {
+        "ParamName": "Get Integer",
+        "InnerTree": {}
+      },
+      "Name": "_end_day_",
+      "ParamType": "Integer"
+    },
+    {
+      "Description": "",
+      "AtLeast": 0,
+      "AtMost": 24,
+      "TreeAccess": false,
+      "Default": {
+        "ParamName": "Get Integer",
+        "InnerTree": {}
+      },
+      "Name": "_end_hour_",
+      "ParamType": "Integer"
+    },
+    {
+      "Description": "",
+      "AtLeast": 1,
+      "AtMost": 1,
+      "TreeAccess": false,
+      "Default": {
+        "ParamName": "Get Integer",
+        "InnerTree": {}
+      },
+      "Name": "_timestep_",
+      "ParamType": "Integer"
+    },
+    {
+      "Description": "Represents a collection of Script variables. This parameter type is used in Script components in order to convert and simplify input data. All data in Grasshopper is stored in special classes that make it harder to use the data directly. This parameter type converts a number of Grasshopper types into the corresponding primitive type: (integers, floating point numbers, strings, On3dPoints, OnCircles etc.). ",
+      "AtLeast": 0,
+      "AtMost": 100,
+      "TreeAccess": false,
+      "Default": {
+        "ParamName": "Get Number",
+        "InnerTree": {}
+      },
+      "Name": "_grid_size",
+      "ParamType": "Number"
+    }
+  ],
+  "Outputs": [
+    {
+      "Name": "Mesh",
+      "ParamType": "Generic Data"
+    },
+    {
+      "Name": "Leg",
+      "ParamType": "Generic Data"
+    },
+    {
+      "Name": "RadV",
+      "ParamType": "Generic Data"
+    },
+    {
+      "Name": "debug",
+      "ParamType": "Generic Data"
+    }
+  ],
+  "Warnings": [],
+  "Errors": []
+}
