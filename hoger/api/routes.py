@@ -196,9 +196,25 @@ def _check_gh_path(gh_path: str) -> None:
 
 
 def _suggest_name(candidate, used_names: set) -> str:
-    """建議參數名：優先第一個 feed 的 input 名，其次 nickname，否則
-    object_type 小寫加序號。名字消毒為 ^[A-Za-z0-9_]+$（移除所有其他字元），
-    消毒後為空則 fallback 為 object_type 形式。同名衝突加 _2/_3... 後綴。
+    """建議參數名（掃描階段預填給使用者確認/修改用，不是最終權威值）：優先
+    第一個 feed 的接線端名稱，其次 nickname，否則 object_type 小寫加序號。
+    名字消毒為 ^[A-Za-z0-9_]+$（移除所有其他字元），消毒後為空則 fallback
+    為 object_type 形式。同名衝突加 _2/_3... 後綴。
+
+    candidate 可以是 scanner.InputCandidate 或 scanner.OutputCandidate
+    （呼叫端把 inputs 與 outputs 混在同一個 used_names 集合裡跑，見
+    _build_suggested_names，確保建議名跨輸入/輸出也不重複）。兩者的 feeds
+    欄位形狀不同（見 hoger/ghio/scanner.py）：
+    - InputCandidate.feeds：該輸入接到哪個元件的哪個「input」腳位
+      -> dict 用 "input" 這個 key。
+    - OutputCandidate.fed_by（注意屬性名不同，但傳進來時已用同名
+      getattr(candidate, "feeds", ...) 統一嘗試讀取；OutputCandidate 若無
+      "feeds" 屬性則此 getattr 回傳 None，直接 fallback 到 nickname 分支）
+      -> 實際餵給這裡的 feed dict 用的是 "output" 這個 key（該輸出的來源
+      元件的輸出腳位名）。
+    `raw = feeds[0].get("input") or feeds[0].get("output") or ""` 這行同時
+    嘗試兩個 key 是刻意的 dual-key 寫法，讓同一份程式碼服務 input 與
+    output 兩種 candidate，不必為 OutputCandidate 另寫一份判斷分支。
     """
     feeds = getattr(candidate, "feeds", None) or []
     nickname = getattr(candidate, "nickname", None) or ""

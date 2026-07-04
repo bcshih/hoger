@@ -131,6 +131,11 @@ def parse(res: Optional[dict], manifest: ToolManifest) -> dict:
     """
     results: dict = {o.param_name: [] for o in manifest.outputs}
     kind_by_name = {o.param_name: o.kind for o in manifest.outputs}
+    # dict comprehension 對重複 compute_name 靜默取後者（保留最後一個 output 的
+    # param_name）。manifest_from_io() 從 /io 回應解析出的 outputs 不會產生重複
+    # compute_name（每個 /io Name 唯一），故正常流程不會踩到這個邊界；只有手動
+    # 編輯 tools/*.json、刻意讓兩個 OutputSpec 共用同一個 compute_name 時才可能
+    # 觸發，此時 parse() 只會把該 compute_name 的資料寫進後者的 param_name。
     param_name_by_compute_name = {
         o.compute_name: o.param_name for o in manifest.outputs if o.compute_name
     }

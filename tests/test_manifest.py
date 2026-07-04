@@ -356,6 +356,34 @@ def test_output_without_rh_out_prefix_compute_name_is_none():
     assert spec.compute_name is None
 
 
+def test_input_name_xrh_in_substring_not_prefix_compute_name_is_none():
+    # "XRH_IN:foo" contains "RH_IN" as a substring but does NOT start with
+    # the "RH_IN:" prefix -- manifest._split_name() only matches a leading
+    # prefix (str.startswith), so this must fall through to the v1 branch:
+    # param_name kept as-is, compute_name None.
+    #
+    # This is a different rule from marker.py's "RH_IN"/"RH_OUT" collision
+    # check (hoger/ghio/marker.py::_validate_name), which matches the
+    # substring *anywhere* in a mark name to prevent authors from choosing a
+    # name that would itself collide with the "RH_IN:"/"RH_OUT:" NickName
+    # prefix once written (e.g. mark name "XRH_IN" would produce NickName
+    # "RH_IN:XRH_IN"). manifest.py's prefix check and marker.py's substring
+    # check operate on different strings for different purposes (parsing an
+    # already-written /io Name vs validating a not-yet-written mark name),
+    # so a Name like "XRH_IN:foo" seen here is not something HOGER's own
+    # marker.py would ever produce -- it could only reach manifest_from_io()
+    # via a hand-authored/third-party GH group NickName. Since it doesn't
+    # start with "RH_IN:", executor._compute_name() falls back to injecting
+    # the literal param_name ("XRH_IN:foo") when talking to Rhino.Compute,
+    # which is the correct (if unusual) behavior: whatever raw Name /io
+    # reported for a non-prefixed group is exactly what must be echoed back.
+    io_response = {"Inputs": [{"Name": "XRH_IN:foo", "ParamType": "Number"}]}
+    m = manifest_from_io("foo.gh", io_response)
+    spec = m.inputs[0]
+    assert spec.param_name == "XRH_IN:foo"
+    assert spec.compute_name is None
+
+
 def test_input_name_exactly_rh_in_prefix_falls_back_to_slugify():
     # Name == "RH_IN:" (empty after stripping) -> param_name via slugify fallback,
     # never an empty string.

@@ -718,3 +718,24 @@ def test_build_trees_compute_name_for_geometry_encoded():
     trees = build_trees(manifest, {"geo": {"encoded": [raw]}})
     assert trees[0]["ParamName"] == "RH_IN:geo"
     assert trees[0]["InnerTree"]["{0}"][0]["data"] == raw
+
+
+def test_build_trees_compute_name_for_geometry_file_3dm(tmp_path):
+    # file_3dm call-site（真實 .3dm，非 encoded）也要用 compute_name 當
+    # tree 的 ParamName——與 encoded 路徑（上面的測試）走的是同一個
+    # _compute_name() 呼叫點，但 tree 建構函式不同（geometry_tree vs
+    # encoded_tree），故獨立驗證。
+    path = _make_3dm_with_layers(tmp_path)
+    manifest = _make_manifest(
+        inputs=[
+            InputSpec(
+                param_name="geo",
+                kind="geometry",
+                param_type="Brep",
+                compute_name="RH_IN:geo",
+            )
+        ]
+    )
+    trees = build_trees(manifest, {"geo": {"file_3dm": path}})
+    assert trees[0]["ParamName"] == "RH_IN:geo"
+    assert len(trees[0]["InnerTree"]["{0}"]) == 2

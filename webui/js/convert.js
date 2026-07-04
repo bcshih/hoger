@@ -658,6 +658,23 @@ function mapObjectTypeToKind(objectType) {
   return "geometry";
 }
 
+function applyNameInput(input, stageEl) {
+  const idx = Number(input.dataset.idx);
+  const list = input.dataset.kind === "input" ? STATE.inputRows : STATE.outputRows;
+  list[idx].name = input.value;
+  render();
+  // render() 重繪後原 input 已失焦重建；重新取得同一格並還原焦點與游標。
+  const newTbody = stageEl.querySelector(
+    input.dataset.kind === "input" ? "#scan-inputs-tbody" : "#scan-outputs-tbody"
+  );
+  const newInput = newTbody?.querySelector(`.scan-name-input[data-idx="${idx}"]`);
+  if (newInput) {
+    newInput.focus();
+    const pos = newInput.value.length;
+    newInput.setSelectionRange(pos, pos);
+  }
+}
+
 function bindScanStage(stageEl) {
   if (STATE.scanConvertDown) {
     stageEl.querySelector("#scan-back-btn")?.addEventListener("click", () => {
@@ -680,21 +697,33 @@ function bindScanStage(stageEl) {
   });
 
   stageEl.querySelectorAll(".scan-name-input").forEach((input) => {
+    // IME（中文/日文/韓文等）輸入法防護：組字（composition）進行中的
+    // input 事件是每個候選字階段都會觸發的中間態，不是使用者確認的最終
+    // 文字。若在組字中途就 render() 重繪，畫面會在候選字選字視窗還開著
+    // 時被打斷，導致組字异常中斷或游標錯位。用 compositionstart/end 旗標
+    // 讓組字進行中的 input 事件只更新 state、不觸發重繪；真正的重繪延後
+    // 到 compositionend（使用者已確認這個字/詞）才做一次。
+    let composing = false;
+
+    input.addEventListener("compositionstart", () => {
+      composing = true;
+    });
+
+    input.addEventListener("compositionend", () => {
+      composing = false;
+      applyNameInput(input, stageEl);
+    });
+
     input.addEventListener("input", () => {
-      const idx = Number(input.dataset.idx);
-      const list = input.dataset.kind === "input" ? STATE.inputRows : STATE.outputRows;
-      list[idx].name = input.value;
-      render();
-      // render() 重繪後原 input 已失焦重建；重新取得同一格並還原焦點與游標。
-      const newTbody = stageEl.querySelector(
-        input.dataset.kind === "input" ? "#scan-inputs-tbody" : "#scan-outputs-tbody"
-      );
-      const newInput = newTbody?.querySelector(`.scan-name-input[data-idx="${idx}"]`);
-      if (newInput) {
-        newInput.focus();
-        const pos = newInput.value.length;
-        newInput.setSelectionRange(pos, pos);
+      if (composing) {
+        // 組字中：先同步 state 的名稱（供驗證/重名檢查等邏輯讀到最新值），
+        // 但不 render()，避免重繪打斷正在輸入法選字視窗中的組字。
+        const idx = Number(input.dataset.idx);
+        const list = input.dataset.kind === "input" ? STATE.inputRows : STATE.outputRows;
+        list[idx].name = input.value;
+        return;
       }
+      applyNameInput(input, stageEl);
     });
   });
 
