@@ -22,6 +22,7 @@ from hoger.ghio import loader
 if not loader.is_available():
     pytest.skip("GH_IO.dll not available", allow_module_level=True)
 
+from hoger.ghio import ghio_helpers as ghh  # noqa: E402
 from hoger.ghio import marker  # noqa: E402
 from hoger.ghio import scanner  # noqa: E402
 
@@ -253,6 +254,152 @@ def test_duplicate_guid_across_input_and_output_raises_mark_error(
             input_marks=[{"guid": fixture_guids["slider"], "name": "size"}],
             output_marks=[{"guid": fixture_guids["slider"], "name": "size_out"}],
         )
+
+
+# ── multi-group membership (ambiguous state) ────────────────────────
+
+
+def _inject_second_mark_group(path, member_guid, nickname):
+    """Directly inject an extra RH_ marker group containing `member_guid`,
+    bypassing apply_marks' idempotency, to fabricate the ambiguous
+    'object in two marker groups' state."""
+    archive_cls = loader.get_archive_class()
+    archive = archive_cls()
+    assert archive.ReadFromFile(str(path))
+    root = archive.get_GetRootNode()
+    definition = ghh.find_chunk(root, "Definition")
+    def_objects = ghh.find_chunk(definition, "DefinitionObjects")
+    count = ghh.get_int32(def_objects, "ObjectCount")
+    marker._write_new_group(def_objects, count, member_guid, nickname, "IN")
+    ghh.remove_item(def_objects, "ObjectCount")
+    ghh.set_int32(def_objects, "ObjectCount", count + 1)
+    assert archive.WriteToFile(str(path), True, False)
+
+
+def test_multi_group_membership_rejected_before_write(fixture_copy, fixture_guids):
+    slider_guid = fixture_guids["slider"]
+
+    # First mark via the normal path, then fabricate a second marker group
+    # around the same object (bypassing idempotency).
+    marker.apply_marks(
+        fixture_copy,
+        input_marks=[{"guid": slider_guid, "name": "size"}],
+        output_marks=[],
+        backup=False,
+    )
+    _inject_second_mark_group(fixture_copy, slider_guid, "RH_IN:duplicate")
+
+    before = _sha256_bytes(fixture_copy.read_bytes())
+    with pytest.raises(marker.MarkError, match="2 marker groups"):
+        marker.apply_marks(
+            fixture_copy,
+            input_marks=[{"guid": slider_guid, "name": "size3"}],
+            output_marks=[],
+        )
+    after = _sha256_bytes(fixture_copy.read_bytes())
+    assert before == after  # rejected before any write
+    assert list(fixture_copy.parent.glob("*.bak")) == []  # before backup too
+    assert list(fixture_copy.parent.glob("*.tmp.gh")) == []
+
+
+# ── write failure: original untouched (atomic write) ────────────────
+
+
+class _WriteFailArchive:
+    """Proxy around a real GH_Archive whose WriteToFile fails."""
+
+    mode = "raise"  # or "false"
+
+    def __init__(self):
+        self._inner = loader.get_archive_class()()
+
+    def ReadFromFile(self, p):
+        return self._inner.ReadFromFile(p)
+
+    def get_GetRootNode(self):
+        return self._inner.get_GetRootNode()
+
+    def WriteToFile(self, *args):
+        if self.mode == "false":
+            return False
+        raise IOError("simulated disk-full during WriteToFile")
+
+
+@pytest.mark.parametrize("fail_mode", ["raise", "false"])
+def test_write_failure_leaves_original_untouched(
+    fixture_copy, fixture_guids, monkeypatch, fail_mode
+):
+    monkeypatch.setattr(_WriteFailArchive, "mode", fail_mode)
+    monkeypatch.setattr(marker, "get_archive_class", lambda: _WriteFailArchive)
+
+    before = _sha256_bytes(fixture_copy.read_bytes())
+    with pytest.raises(RuntimeError, match="not been modified"):
+        marker.apply_marks(
+            fixture_copy,
+            input_marks=[{"guid": fixture_guids["slider"], "name": "size"}],
+            output_marks=[],
+        )
+    after = _sha256_bytes(fixture_copy.read_bytes())
+    assert before == after
+    assert list(fixture_copy.parent.glob("*.tmp.gh")) == []
+
+
+def test_write_failure_message_mentions_backup(
+    fixture_copy, fixture_guids, monkeypatch
+):
+    monkeypatch.setattr(_WriteFailArchive, "mode", "raise")
+    monkeypatch.setattr(marker, "get_archive_class", lambda: _WriteFailArchive)
+
+    with pytest.raises(RuntimeError, match=r"backup at .*\.bak"):
+        marker.apply_marks(
+            fixture_copy,
+            input_marks=[{"guid": fixture_guids["slider"], "name": "size"}],
+            output_marks=[],
+        )
+
+
+# ── verification failure: original untouched ────────────────────────
+
+
+def test_verify_mismatch_leaves_original_untouched(
+    fixture_copy, fixture_guids, monkeypatch
+):
+    """Verification runs against the temp file before it replaces the
+    original, so a mismatch must leave the original byte-for-byte intact."""
+    monkeypatch.setattr(
+        marker, "scan_gh", lambda p: scanner.ScanResult([], [], 0, 0)
+    )
+
+    before = _sha256_bytes(fixture_copy.read_bytes())
+    with pytest.raises(RuntimeError, match="verification failed.*not been modified"):
+        marker.apply_marks(
+            fixture_copy,
+            input_marks=[{"guid": fixture_guids["slider"], "name": "size"}],
+            output_marks=[],
+        )
+    after = _sha256_bytes(fixture_copy.read_bytes())
+    assert before == after
+    assert list(fixture_copy.parent.glob("*.tmp.gh")) == []
+
+
+def test_verify_scan_error_leaves_original_untouched(
+    fixture_copy, fixture_guids, monkeypatch
+):
+    def _boom(p):
+        raise ValueError("simulated scan failure")
+
+    monkeypatch.setattr(marker, "scan_gh", _boom)
+
+    before = _sha256_bytes(fixture_copy.read_bytes())
+    with pytest.raises(RuntimeError, match="verification failed"):
+        marker.apply_marks(
+            fixture_copy,
+            input_marks=[{"guid": fixture_guids["slider"], "name": "size"}],
+            output_marks=[],
+        )
+    after = _sha256_bytes(fixture_copy.read_bytes())
+    assert before == after
+    assert list(fixture_copy.parent.glob("*.tmp.gh")) == []
 
 
 # ── backup=False ─────────────────────────────────────────────────────

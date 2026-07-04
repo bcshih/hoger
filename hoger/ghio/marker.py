@@ -31,6 +31,7 @@ Key facts this module relies on:
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import uuid
@@ -47,10 +48,12 @@ GH_GROUP_TYPE_GUID = "c552a431-af5b-46a9-a8a4-0fcbc27ef596"
 _NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 _MARK_GROUP_RE = re.compile(r"^RH_(IN|OUT):")
 
-# Cosmetic default colours for injected groups (a, r, g, b). Chosen to be
-# visually distinct in the GH canvas; /io does not care about this value.
-_INPUT_COLOUR = (150, 255, 170, 100)
-_OUTPUT_COLOUR = (150, 170, 200, 255)
+# Cosmetic default colours for injected groups, as (alpha, red, green, blue)
+# tuples -- the exact argument order of System.Drawing.Color.FromArgb, which
+# ghio_helpers.set_drawing_color unpacks positionally. /io ignores the colour;
+# it only affects how the group renders in the Grasshopper canvas.
+_INPUT_COLOUR = (150, 255, 170, 100)  # semi-transparent orange: input marks
+_OUTPUT_COLOUR = (150, 170, 200, 255)  # semi-transparent blue: output marks
 
 _INPUT_DESCRIPTION = "HOGER auto-generated input mark"
 _OUTPUT_DESCRIPTION = "HOGER auto-generated output mark"
@@ -151,9 +154,17 @@ def _top_level_group_objects(def_objects) -> list:
     return groups
 
 
-def _find_existing_mark_group(groups: list, member_guid: str):
-    """Return the group dict whose ID list contains `member_guid` and whose
-    NickName matches the HOGER marker pattern (^RH_(IN|OUT):), or None."""
+def _mark_groups_containing(groups: list, member_guid: str) -> list:
+    """Return every group dict whose ID list contains `member_guid` and whose
+    NickName matches the HOGER marker pattern (^RH_(IN|OUT):).
+
+    Returning *all* matches (not just the first) matters: if an object
+    belongs to two or more marker groups at once, renaming just one of them
+    is ambiguous (the scanner reports the last group's NickName as
+    existing_mark, so renaming the first would "succeed" and then fail
+    post-write verification). apply_marks rejects that state up front.
+    """
+    matches = []
     for g in groups:
         nickname = g["nickname"]
         if not nickname or not _MARK_GROUP_RE.match(nickname):
@@ -173,8 +184,17 @@ def _find_existing_mark_group(groups: list, member_guid: str):
             except Exception:
                 continue
             if member.lower() == member_guid.lower():
-                return g
-    return None
+                matches.append(g)
+                break
+    return matches
+
+
+def _discard(tmp_path: Path) -> None:
+    """Best-effort removal of a temp file on a failure path."""
+    try:
+        tmp_path.unlink()
+    except OSError:
+        pass
 
 
 def _write_new_group(def_objects, index: int, member_guid: str, nickname: str, kind: str) -> None:
@@ -207,23 +227,36 @@ def apply_marks(
     input_marks / output_marks: [{"guid": "<instance guid>", "name": "<param name>"}]
 
     All-or-nothing: every mark is validated (name format, guid existence,
-    no duplicate guid across the whole call) *before* anything is written
-    to disk. If any validation fails, MarkError is raised and the file is
-    left byte-for-byte unmodified (no .bak is created either).
+    no duplicate guid across the whole call, no ambiguous multi-group
+    membership) *before* anything is written to disk. If any validation
+    fails, MarkError is raised and the file is left byte-for-byte
+    unmodified (no .bak is created either).
 
-    Idempotency: if the target object is already a member of an existing
-    HOGER-style marker group (NickName matches ^RH_(IN|OUT):), that group's
-    NickName is renamed to the new value instead of adding a new group; such
-    marks are reported in MarkResult.updated rather than marked_inputs/
-    marked_outputs.
+    Atomic write: the modified archive is written to a sibling temp file
+    (same directory, therefore same volume) and post-write verification
+    runs against that temp file; only after verification passes is the
+    temp os.replace()'d over the original. Invariant: **if apply_marks
+    raises, the user's file is byte-for-byte identical to before the
+    call** -- on every failure path (validation error, WriteToFile
+    returning False or raising, verification mismatch) the original has
+    never been touched, with or without backup. A crash mid-write can at
+    worst leave a stray .gh.tmp sibling, never a corrupted original.
+
+    Idempotency: if the target object is already a member of exactly one
+    existing HOGER-style marker group (NickName matches ^RH_(IN|OUT):),
+    that group's NickName is renamed to the new value instead of adding a
+    new group; such marks are reported in MarkResult.updated rather than
+    marked_inputs/marked_outputs. Membership in two or more marker groups
+    at once is ambiguous and rejected with MarkError (clean it up manually
+    in Grasshopper first).
 
     Raises:
-        MarkError: invalid name, unknown guid, or duplicate guid (raised
-            before any write -- see above).
+        MarkError: invalid name, unknown guid, duplicate guid, or
+            ambiguous multi-group membership (raised before any write).
         hoger.ghio.loader.GhioUnavailable: GH_IO.dll not available.
-        RuntimeError: the file was written but a post-write re-read/scan
-            did not confirm every mark (backup_path, if any, is mentioned
-            in the message so the caller can restore).
+        RuntimeError: writing or post-write verification failed; the
+            original file is unmodified (the message says so and mentions
+            backup_path when one was made).
     """
     path = Path(path)
 
@@ -267,6 +300,22 @@ def apply_marks(
 
     plan = _validate_marks_and_build_plan(input_marks, output_marks, known_guids)
 
+    # Multi-group membership check (still validation -- nothing written yet):
+    # an object sitting in >= 2 marker groups cannot be renamed unambiguously
+    # (which group is "the" mark?), and the scanner would report a different
+    # group than the one we renamed. Reject the whole call before touching
+    # disk; the user must clean up the duplicate groups in Grasshopper first.
+    groups = _top_level_group_objects(def_objects)
+    for item in plan:
+        item["existing_groups"] = _mark_groups_containing(groups, item["guid"])
+        if len(item["existing_groups"]) >= 2:
+            raise MarkError(
+                f"object {item['guid']!r} already belongs to "
+                f"{len(item['existing_groups'])} marker groups at once; the "
+                "existing mark state is ambiguous -- please clean up the "
+                "groups manually in Grasshopper first"
+            )
+
     # ---- validation complete; now safe to touch disk ----
 
     backup_path = None
@@ -274,8 +323,6 @@ def apply_marks(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = path.with_name(f"{path.stem}.{timestamp}.bak")
         shutil.copy2(str(path), str(backup_path))
-
-    groups = _top_level_group_objects(def_objects)
 
     marked_inputs = []
     marked_outputs = []
@@ -290,7 +337,7 @@ def apply_marks(
         kind = item["kind"]
         nickname = f"RH_IN:{name}" if kind == "IN" else f"RH_OUT:{name}"
 
-        existing_group = _find_existing_mark_group(groups, member_guid)
+        existing_group = item["existing_groups"][0] if item["existing_groups"] else None
         if existing_group is not None:
             gh.remove_item(existing_group["container"], "NickName")
             gh.set_string(existing_group["container"], "NickName", nickname)
@@ -311,13 +358,42 @@ def apply_marks(
         gh.remove_item(def_objects, "ObjectCount")
         gh.set_int32(def_objects, "ObjectCount", new_obj_count)
 
-    if not archive.WriteToFile(str(path), True, False):
+    # ---- atomic write: temp sibling -> verify -> os.replace ----
+    #
+    # Writing directly over the original would leave a truncated, corrupt
+    # file if the process died mid-write (disk full, power loss, ...). The
+    # temp lives in the same directory (same volume), so os.replace() is an
+    # atomic rename; the original is only ever swapped for a fully written,
+    # fully *verified* file. On every failure below, the original has not
+    # been touched at all.
+    #
+    # The temp name must end in ".gh": GH_Archive.WriteToFile dispatches its
+    # serialization format on the file extension and rejects unrecognized
+    # ones outright ("file_name is not of a recognized type"), so a plain
+    # ".tmp" suffix cannot be written at all (verified empirically).
+
+    intact_note = "; the original file has not been modified" + (
+        f" (backup at {backup_path})"
+        if backup_path
+        else " (no backup was made: backup=False)"
+    )
+
+    tmp_path = path.with_name(path.stem + ".tmp.gh")
+    try:
+        write_ok = archive.WriteToFile(str(tmp_path), True, False)
+    except Exception as exc:
+        _discard(tmp_path)
         raise RuntimeError(
-            f"GH_IO WriteToFile failed for {path}"
-            + (f" (backup available at {backup_path})" if backup_path else "")
+            f"GH_IO WriteToFile failed for {path}: {exc}{intact_note}"
+        ) from exc
+    if not write_ok:
+        _discard(tmp_path)
+        raise RuntimeError(
+            f"GH_IO WriteToFile returned False for {path}{intact_note}"
         )
 
-    # ---- post-write verification ----
+    # ---- post-write verification (against the temp file, BEFORE it
+    # replaces the original) ----
 
     expected = {}
     for item in plan:
@@ -325,11 +401,12 @@ def apply_marks(
         expected[item["guid"].lower()] = nickname
 
     try:
-        verify_scan = scan_gh(path)
+        verify_scan = scan_gh(tmp_path)
     except Exception as exc:
+        _discard(tmp_path)
         raise RuntimeError(
-            f"post-write verification failed: could not re-scan {path}: {exc}"
-            + (f" (backup available at {backup_path})" if backup_path else "")
+            f"post-write verification failed: could not re-scan the written "
+            f"archive for {path}: {exc}{intact_note}"
         ) from exc
 
     actual = {}
@@ -343,11 +420,17 @@ def apply_marks(
             mismatches.append((guid_lower, expected_nick, actual_nick))
 
     if mismatches:
+        _discard(tmp_path)
         raise RuntimeError(
             "post-write verification failed: marks did not round-trip as "
-            f"expected: {mismatches}"
-            + (f" (backup available at {backup_path})" if backup_path else "")
+            f"expected: {mismatches}{intact_note}"
         )
+
+    try:
+        os.replace(str(tmp_path), str(path))
+    except OSError:
+        _discard(tmp_path)
+        raise
 
     return MarkResult(
         backup_path=str(backup_path) if backup_path else None,
