@@ -117,6 +117,33 @@ def test_comfort_at_least_one_feeds_nonempty(comfort_copy):
     assert any(i.feeds for i in result.inputs)
 
 
+def test_comfort_chinese_nicknames_intact(comfort_copy):
+    """Unicode round-trip guard: the comfort file contains sliders with
+    Chinese NickNames. GH_IO must return them as correct Unicode strings —
+    exact codepoints, not mojibake. (An earlier dry run showed garbled text
+    in console output; direct codepoint inspection confirmed that was a
+    terminal codepage display artifact, not data corruption — this test
+    pins the actual values.)
+    """
+    result = scanner.scan_gh(comfort_copy)
+    nicknames = {i.nickname for i in result.inputs}
+    assert "粗糙度" in nicknames  # slider: roughness
+    assert "測站高度" in nicknames  # slider: weather-station height
+
+
+def test_comfort_dangling_params_from_allowlist_only(comfort_copy):
+    """The Brep/Point dangling params are allowlisted (PARAM_TYPE_GUIDS) and
+    must appear as input candidates; component-class objects (LB *, Power,
+    Relay, ...) must never appear even though some also carry Source lists.
+    """
+    result = scanner.scan_gh(comfort_copy)
+    types = {i.object_type for i in result.inputs}
+    assert "Brep" in types
+    assert "Point" in types
+    known = scanner.CANDIDATE_INPUT_TYPE_NAMES | {"Brep", "Point", "Geometry"}
+    assert types <= known
+
+
 def test_comfort_no_existing_marks(comfort_copy):
     result = scanner.scan_gh(comfort_copy)
     assert result.already_marked_count == 0

@@ -68,10 +68,15 @@ def _invoke(parent: Any, method_name: str, arg_types: list, args: list) -> Any:
         raise AttributeError(
             f"{t.FullName} has no method {method_name}({[a.__name__ for a in arg_types]})"
         )
-    boxed = [
-        arg if isinstance(arg, arg_type) else arg_type(arg)
-        for arg, arg_type in zip(args, arg_types)
-    ]
+    boxed = []
+    for pos, (arg, arg_type) in enumerate(zip(args, arg_types)):
+        try:
+            boxed.append(arg if isinstance(arg, arg_type) else arg_type(arg))
+        except Exception as exc:
+            raise TypeError(
+                f"{t.FullName}.{method_name}: cannot convert argument {pos} "
+                f"({type(arg).__name__}: {arg!r}) to {arg_type.__name__}"
+            ) from exc
     return m.Invoke(parent, System.Array[System.Object](boxed))
 
 

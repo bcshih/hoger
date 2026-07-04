@@ -34,6 +34,28 @@ from hoger.ghio.loader import get_archive_class
 CANDIDATE_INPUT_TYPE_NAMES = {"Number Slider", "Boolean Toggle", "Panel", "Value List"}
 GROUP_TYPE_NAME = "Group"
 
+# Allowlist of component-class GUIDs (the Object chunk's own "GUID" item, i.e.
+# the *type* GUID, not the InstanceGuid) for standalone parameter objects that
+# may be treated as dangling input/output candidates.
+#
+# Rationale: objects whose Name is not in CANDIDATE_INPUT_TYPE_NAMES could be
+# either bare params (Param_Brep, Param_Point, ...) or full components (LB
+# Outdoor Solar MRT, Power, Relay, ...). Chunk shape alone cannot reliably
+# distinguish them (both serialize as Object -> Container subtrees), so we
+# only accept types we have positively identified as parameter classes —
+# prefer missing a candidate over mislabeling a component as one.
+#
+# To extend: open a .gh containing the param in question, read its Object
+# chunk's "GUID" item (see tests or scratch/spike_v2 scripts for how), verify
+# the object is a bare Grasshopper parameter, and add the GUID here.
+#
+# Currently verified against comfort_in_a_street_canyon_study.gh:
+PARAM_TYPE_GUIDS = {
+    "919e146f-30ae-4aae-be34-4d72f555e7da",  # Param_Brep ("Brep")
+    "fbac3e32-f100-4292-8692-77240a42fd1a",  # Param_Point ("Point")
+    "ac2bc2cb-70fb-4dd5-9c78-7e1ea97fe278",  # Param_Geometry ("Geometry")
+}
+
 # Slider sub-chunk that carries Min/Max/Value.
 _SLIDER_SUBCHUNK = "Slider"
 
@@ -184,6 +206,7 @@ def _top_level_objects(def_objects):
     objects = []
     for i, ch in enumerate(gh.chunks_of(def_objects)):
         type_name = _safe_string(ch, "Name")
+        type_guid = _safe_guid(ch, "GUID")  # component *class* GUID
         container = gh.find_chunk(ch, "Container")
         if container is None:
             continue
@@ -200,6 +223,7 @@ def _top_level_objects(def_objects):
             {
                 "index": i,
                 "type_name": type_name,
+                "type_guid": type_guid,
                 "instance_guid": instance_guid,
                 "nickname": nickname,
                 "sources": sources,
@@ -270,7 +294,13 @@ def scan_gh(path) -> ScanResult:
 
     root = archive.get_GetRootNode()
     definition = gh.find_chunk(root, "Definition")
+    if definition is None:
+        raise ValueError(f"Not a valid GH archive (no Definition chunk): {path}")
     def_objects = gh.find_chunk(definition, "DefinitionObjects")
+    if def_objects is None:
+        raise ValueError(
+            f"Not a valid GH archive (no DefinitionObjects chunk): {path}"
+        )
 
     objects = _top_level_objects(def_objects)
     object_count = len(objects)
@@ -335,19 +365,14 @@ def scan_gh(path) -> ScanResult:
                 )
             )
         else:
-            # Non-slider/toggle/panel/valuelist top-level object (a component,
-            # or a dangling param). Only relevant as a scan candidate if it
-            # looks like a dangling input (has downstream, no upstream) or a
-            # dangling output (has upstream feeding it from elsewhere, no
-            # downstream) at the TOP level -- most top-level "objects" here
-            # are actual components (with their own nested input params
-            # already captured via the recursive scan), so we only treat
-            # true leaf params (no nested Object/Container-less shape) as
-            # candidates. We detect "leaf param-like" by requiring the
-            # object to expose SourceCount directly on its own container
-            # (already true for all objects here) AND have no further
-            # nested "Object" sub-chunks (i.e. it isn't a compound component).
-            if _looks_like_component(o):
+            # Non-slider/toggle/panel/valuelist top-level object. Could be a
+            # bare param (Param_Brep, Param_Point, ...) or a full component.
+            # Only objects whose *type* GUID is in the verified allowlist are
+            # considered dangling-param candidates; everything else is treated
+            # as a component and skipped (its own nested input params are
+            # already captured by the recursive Source scan). See
+            # PARAM_TYPE_GUIDS for the rationale and how to extend the list.
+            if o["type_guid"] not in PARAM_TYPE_GUIDS:
                 continue
             if has_downstream and not has_upstream:
                 current_value, minimum, maximum = _extract_values(type_name, container)
@@ -383,26 +408,14 @@ def scan_gh(path) -> ScanResult:
     )
 
 
-def _looks_like_component(o) -> bool:
-    """Heuristic: an object is a "component" (as opposed to a bare param)
-    if its Object chunk contains nested chunks other than Container, i.e.
-    it isn't just {GUID, Name, Container{...}}. Bare params (Slider/Toggle/
-    Panel/ValueList) only ever have a single "Container" child under Object.
-    """
-    children = gh.chunks_of(o["chunk"])
-    child_names = {c.Name for c in children}
-    return len(child_names - {"Container"}) > 0
-
-
 def _fed_by_for(o, all_param_records):
-    """For an object with upstream Source(s), resolve the upstream component
-    display names by finding, among all_param_records, any record whose
-    InstanceGuid equals one of this object's sources -- no, actually we need
-    the upstream side's own identity, not its consumers. Since Source[] on
-    `o` already gives the upstream InstanceGuids directly, we look up display
-    names by matching those guids against all_param_records' own identity
-    (a record whose instance_guid equals the source), falling back to the
-    guid itself if not found.
+    """Resolve display names for the upstream objects feeding `o`.
+
+    `o["sources"]` already holds the InstanceGuids of the upstream params.
+    Each source guid is looked up in all_param_records (keyed by each
+    record's own instance_guid) to obtain a display name (NickName, falling
+    back to Name); if no record matches, the raw guid string is used as the
+    label. Returns [{"component": <label>, "output": <label>}, ...].
     """
     by_guid = {r["instance_guid"]: r for r in all_param_records if r["instance_guid"]}
     fed_by = []
