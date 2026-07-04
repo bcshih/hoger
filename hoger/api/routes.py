@@ -203,20 +203,15 @@ def _suggest_name(candidate, used_names: set) -> str:
 
     candidate 可以是 scanner.InputCandidate 或 scanner.OutputCandidate
     （呼叫端把 inputs 與 outputs 混在同一個 used_names 集合裡跑，見
-    _build_suggested_names，確保建議名跨輸入/輸出也不重複）。兩者的 feeds
-    欄位形狀不同（見 hoger/ghio/scanner.py）：
-    - InputCandidate.feeds：該輸入接到哪個元件的哪個「input」腳位
-      -> dict 用 "input" 這個 key。
-    - OutputCandidate.fed_by（注意屬性名不同，但傳進來時已用同名
-      getattr(candidate, "feeds", ...) 統一嘗試讀取；OutputCandidate 若無
-      "feeds" 屬性則此 getattr 回傳 None，直接 fallback 到 nickname 分支）
-      -> 實際餵給這裡的 feed dict 用的是 "output" 這個 key（該輸出的來源
-      元件的輸出腳位名）。
-    `raw = feeds[0].get("input") or feeds[0].get("output") or ""` 這行同時
-    嘗試兩個 key 是刻意的 dual-key 寫法，讓同一份程式碼服務 input 與
-    output 兩種 candidate，不必為 OutputCandidate 另寫一份判斷分支。
+    _build_suggested_names，確保建議名跨輸入/輸出也不重複）。兩者的接線
+    欄位名稱與 dict key 都不同（見 hoger/ghio/scanner.py）：
+    - InputCandidate.feeds：接到哪個元件的哪個腳位 -> dict 用 "input" key。
+    - OutputCandidate.fed_by：由哪個元件的哪個輸出腳位餵入 -> dict 用
+      "output" key。
+    下方 getattr 依序嘗試兩個屬性名、feeds[0] 依序嘗試兩個 key，讓同一份
+    程式碼服務 input 與 output 兩種 candidate。
     """
-    feeds = getattr(candidate, "feeds", None) or []
+    feeds = getattr(candidate, "feeds", None) or getattr(candidate, "fed_by", None) or []
     nickname = getattr(candidate, "nickname", None) or ""
 
     if feeds:

@@ -100,6 +100,8 @@ def test_scan_json_gh_path_suggested_names(client, monkeypatch, tmp_path):
     assert suggested["11111111-1111-1111-1111-111111111111"] == "_grid_size"
     # 中文 nickname 消毒後為空 -> fallback object_type 形式
     assert suggested["22222222-2222-2222-2222-222222222222"] == "boolean_toggle_1"
+    # 輸出候選用 fed_by 的接線名（來源元件的輸出腳位），不是 nickname
+    assert suggested["33333333-3333-3333-3333-333333333333"] == "R"
 
 
 def test_scan_suggested_names_conflict_suffix(client, monkeypatch, tmp_path):
