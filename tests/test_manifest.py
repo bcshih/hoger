@@ -305,3 +305,307 @@ def test_input_spec_has_type_mapping_duck_type_attributes():
     spec = InputSpec(param_name="_x", kind="number", param_type="Number")
     for attr in ("param_name", "kind", "description", "required", "default", "minimum", "maximum", "enum_values"):
         assert hasattr(spec, attr)
+
+
+# ── compute_name: RH_IN:/RH_OUT: separation (v2 group files) ──────────
+
+
+def test_compute_name_none_by_default_for_v1_input():
+    spec = InputSpec(param_name="_x", kind="number", param_type="Number")
+    assert spec.compute_name is None
+
+
+def test_compute_name_none_by_default_for_v1_output():
+    spec = OutputSpec(param_name="foo", kind="number")
+    assert spec.compute_name is None
+
+
+def test_input_rh_in_prefix_stripped_and_compute_name_preserved():
+    io_response = {
+        "Inputs": [
+            {"Name": "RH_IN:size", "Nickname": "RH_IN:size", "ParamType": "Number"},
+        ]
+    }
+    m = manifest_from_io("foo.gh", io_response)
+    spec = m.inputs[0]
+    assert spec.param_name == "size"
+    assert spec.compute_name == "RH_IN:size"
+
+
+def test_input_without_rh_in_prefix_compute_name_is_none():
+    io_response = {"Inputs": [{"Name": "_grid_size", "ParamType": "Number"}]}
+    m = manifest_from_io("foo.gh", io_response)
+    spec = m.inputs[0]
+    assert spec.param_name == "_grid_size"
+    assert spec.compute_name is None
+
+
+def test_output_rh_out_prefix_stripped_and_compute_name_preserved():
+    io_response = {"Outputs": [{"Name": "RH_OUT:report", "ParamType": "Text"}]}
+    m = manifest_from_io("foo.gh", io_response)
+    spec = m.outputs[0]
+    assert spec.param_name == "report"
+    assert spec.compute_name == "RH_OUT:report"
+
+
+def test_output_without_rh_out_prefix_compute_name_is_none():
+    io_response = {"Outputs": [{"Name": "Mesh", "ParamType": "Mesh"}]}
+    m = manifest_from_io("foo.gh", io_response)
+    spec = m.outputs[0]
+    assert spec.param_name == "Mesh"
+    assert spec.compute_name is None
+
+
+def test_input_name_exactly_rh_in_prefix_falls_back_to_slugify():
+    # Name == "RH_IN:" (empty after stripping) -> param_name via slugify fallback,
+    # never an empty string.
+    io_response = {"Inputs": [{"Name": "RH_IN:", "ParamType": "Number"}]}
+    m = manifest_from_io("foo.gh", io_response)
+    spec = m.inputs[0]
+    assert spec.param_name  # non-empty
+    assert spec.compute_name == "RH_IN:"
+
+
+def test_output_name_exactly_rh_out_prefix_falls_back_to_slugify():
+    io_response = {"Outputs": [{"Name": "RH_OUT:", "ParamType": "Text"}]}
+    m = manifest_from_io("foo.gh", io_response)
+    spec = m.outputs[0]
+    assert spec.param_name
+    assert spec.compute_name == "RH_OUT:"
+
+
+# ── DataTree-shaped Default parsing (v2 group files) ───────────────────
+
+
+def test_datatree_default_double_parsed():
+    io_response = {
+        "Inputs": [
+            {
+                "Name": "RH_IN:size",
+                "ParamType": "Number",
+                "Minimum": 0.0,
+                "Maximum": 10.0,
+                "Default": {
+                    "ParamName": "Number Slider",
+                    "InnerTree": {"{0}": [{"type": "System.Double", "data": "3.0"}]},
+                },
+            }
+        ]
+    }
+    m = manifest_from_io("foo.gh", io_response)
+    spec = m.inputs[0]
+    assert spec.default == 3.0
+    assert spec.minimum == 0.0
+    assert spec.maximum == 10.0
+    assert spec.required is False  # DataTree default parsed successfully -> has default
+
+
+def test_datatree_default_integer_parsed():
+    io_response = {
+        "Inputs": [
+            {
+                "Name": "RH_IN:count",
+                "ParamType": "Integer",
+                "Default": {
+                    "InnerTree": {"{0}": [{"type": "System.Int32", "data": "7"}]},
+                },
+            }
+        ]
+    }
+    m = manifest_from_io("foo.gh", io_response)
+    spec = m.inputs[0]
+    assert spec.default == 7
+
+
+def test_datatree_default_boolean_parsed():
+    io_response = {
+        "Inputs": [
+            {
+                "Name": "RH_IN:flag",
+                "ParamType": "Boolean",
+                "Default": {
+                    "InnerTree": {"{0}": [{"type": "System.Boolean", "data": "true"}]},
+                },
+            }
+        ]
+    }
+    m = manifest_from_io("foo.gh", io_response)
+    spec = m.inputs[0]
+    assert spec.default is True
+
+
+def test_datatree_default_non_string_data_used_as_is():
+    io_response = {
+        "Inputs": [
+            {
+                "Name": "RH_IN:size",
+                "ParamType": "Number",
+                "Default": {
+                    "InnerTree": {"{0}": [{"type": "System.Double", "data": 3.0}]},
+                },
+            }
+        ]
+    }
+    m = manifest_from_io("foo.gh", io_response)
+    assert m.inputs[0].default == 3.0
+
+
+def test_datatree_default_bad_shape_missing_innertree_key_treated_as_plain_dict():
+    # A dict without "InnerTree" is not a DataTree default -> passed through as-is
+    # (defensive: unrecognized dict shape, not our v2 case to unwrap).
+    io_response = {
+        "Inputs": [{"Name": "RH_IN:x", "ParamType": "Number", "Default": {"foo": "bar"}}]
+    }
+    m = manifest_from_io("foo.gh", io_response)
+    assert m.inputs[0].default == {"foo": "bar"}
+
+
+def test_datatree_default_empty_innertree_returns_none_with_warning(caplog):
+    io_response = {
+        "Inputs": [
+            {"Name": "RH_IN:x", "ParamType": "Number", "Default": {"InnerTree": {}}}
+        ]
+    }
+    with caplog.at_level("WARNING", logger="hoger.manifest"):
+        m = manifest_from_io("foo.gh", io_response)
+    assert m.inputs[0].default is None
+    assert m.inputs[0].required is True  # no default -> AtLeast>=1 -> required
+    assert any("hoger.manifest" == r.name for r in caplog.records)
+
+
+def test_datatree_default_empty_branch_list_returns_none_with_warning(caplog):
+    io_response = {
+        "Inputs": [
+            {
+                "Name": "RH_IN:x",
+                "ParamType": "Number",
+                "Default": {"InnerTree": {"{0}": []}},
+            }
+        ]
+    }
+    with caplog.at_level("WARNING", logger="hoger.manifest"):
+        m = manifest_from_io("foo.gh", io_response)
+    assert m.inputs[0].default is None
+    assert any("hoger.manifest" == r.name for r in caplog.records)
+
+
+def test_datatree_default_item_missing_data_key_returns_none_with_warning(caplog):
+    io_response = {
+        "Inputs": [
+            {
+                "Name": "RH_IN:x",
+                "ParamType": "Number",
+                "Default": {"InnerTree": {"{0}": [{"type": "System.Double"}]}},
+            }
+        ]
+    }
+    with caplog.at_level("WARNING", logger="hoger.manifest"):
+        m = manifest_from_io("foo.gh", io_response)
+    assert m.inputs[0].default is None
+    assert any("hoger.manifest" == r.name for r in caplog.records)
+
+
+def test_datatree_default_bad_json_string_kept_as_raw_string():
+    # data is a string that fails json.loads -> keep the original string
+    # (not a case we expect for numeric sliders, but defensively verified).
+    io_response = {
+        "Inputs": [
+            {
+                "Name": "RH_IN:x",
+                "ParamType": "String",
+                "Default": {
+                    "InnerTree": {"{0}": [{"type": "System.String", "data": "not json{"}]},
+                },
+            }
+        ]
+    }
+    m = manifest_from_io("foo.gh", io_response)
+    assert m.inputs[0].default == "not json{"
+
+
+def test_v1_plain_default_unaffected_by_datatree_parsing(io_response):
+    # Regression: the v1 sample fixture's plain (non-dict) Default values
+    # must parse exactly as before.
+    m = manifest_from_io("Radiation Study_hops.gh", io_response)
+    grid = next(i for i in m.inputs if i.param_name == "_grid_size")
+    assert grid.default == 1.0
+    run = next(i for i in m.inputs if i.param_name == "_run")
+    assert run.default is False
+
+
+# ── roundtrip with compute_name ────────────────────────────────────────
+
+
+def test_roundtrip_preserves_compute_name():
+    m = ToolManifest(
+        id="v2-tool",
+        display_name="V2 Tool",
+        gh_file="foo.gh",
+        inputs=[
+            InputSpec(
+                param_name="size",
+                compute_name="RH_IN:size",
+                kind="number",
+                param_type="Number",
+                required=False,
+                default=3.0,
+            )
+        ],
+        outputs=[
+            OutputSpec(param_name="report", compute_name="RH_OUT:report", kind="string"),
+        ],
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    dumped = m.model_dump()
+    restored = ToolManifest.model_validate(dumped)
+    assert restored == m
+    assert restored.inputs[0].compute_name == "RH_IN:size"
+    assert restored.outputs[0].compute_name == "RH_OUT:report"
+
+
+def test_legacy_json_without_compute_name_field_deserializes_with_none():
+    # Old tools/*.json written before this task has no "compute_name" key at all.
+    legacy_dump = {
+        "id": "legacy-tool",
+        "display_name": "Legacy Tool",
+        "gh_file": "foo.gh",
+        "inputs": [
+            {
+                "param_name": "_grid_size",
+                "kind": "number",
+                "param_type": "Number",
+                "required": False,
+                "default": 1.0,
+            }
+        ],
+        "outputs": [{"param_name": "total", "kind": "number"}],
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "updated_at": "2026-01-01T00:00:00+00:00",
+    }
+    m = ToolManifest.model_validate(legacy_dump)
+    assert m.inputs[0].compute_name is None
+    assert m.outputs[0].compute_name is None
+
+
+def test_to_mcp_tool_uses_clean_param_name_not_compute_name():
+    m = ToolManifest(
+        id="v2-tool",
+        display_name="V2 Tool",
+        gh_file="foo.gh",
+        inputs=[
+            InputSpec(
+                param_name="size",
+                compute_name="RH_IN:size",
+                kind="number",
+                param_type="Number",
+                required=True,
+            )
+        ],
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    tool = to_mcp_tool(m)
+    assert "size" in tool["inputSchema"]["properties"]
+    assert "RH_IN:size" not in tool["inputSchema"]["properties"]
+    assert tool["inputSchema"]["required"] == ["size"]

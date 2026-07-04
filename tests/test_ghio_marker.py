@@ -466,3 +466,43 @@ class TestMarkerIntegration:
                     if data is not None and "7.5" in str(data):
                         report_value = data
         assert report_value is not None, f"7.5 not found in output values: {values}"
+
+    def test_v2_end_to_end_manifest_and_run_tool(
+        self, fixture_copy, fixture_guids, tmp_path
+    ):
+        """
+        v2 全鏈路（真實 Rhino.Compute）：
+        marker 標記 -> /io -> manifest_from_io（compute_name 分離、DataTree
+        Default 解析）-> run_tool 以乾淨參數名注入 -> results 以 compute_name
+        比對輸出。這條鏈通了，代表 v2-A/B/C 三個 task 的接縫全部正確。
+        """
+        from hoger.core import compute_client
+        from hoger.core.executor import run_tool
+        from hoger.core.manifest import manifest_from_io
+
+        marker.apply_marks(
+            fixture_copy,
+            input_marks=[{"guid": fixture_guids["slider"], "name": "size"}],
+            output_marks=[{"guid": fixture_guids["panel"], "name": "report"}],
+        )
+
+        io_response = compute_client.io_query(str(fixture_copy))
+        manifest = manifest_from_io(str(fixture_copy), io_response)
+
+        size = next(i for i in manifest.inputs if i.param_name == "size")
+        assert size.compute_name == "RH_IN:size"
+        assert size.default == 3.0  # DataTree 形 Default 解析（slider 存檔值）
+        assert size.minimum == 0.0
+        assert size.maximum == 10.0
+        assert size.required is False  # 有 default -> 選填
+
+        report = next(o for o in manifest.outputs if o.param_name == "report")
+        assert report.compute_name == "RH_OUT:report"
+
+        result = run_tool(manifest, {"size": 7.5}, out_dir=tmp_path)
+
+        assert result.errors == []
+        report_values = result.outputs.get("report", [])
+        assert any("7.5" in str(v) for v in report_values), (
+            f"injected 7.5 not reflected in outputs: {result.outputs}"
+        )

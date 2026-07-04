@@ -18,6 +18,8 @@ enum_values）完全一致。
 """
 
 import hashlib
+import json
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +28,8 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 from hoger.core import type_mapping
+
+logger = logging.getLogger("hoger.manifest")
 
 # ── models ───────────────────────────────────────────────────────────
 
@@ -40,7 +44,7 @@ class InputSpec(BaseModel):
     default 重新推導。
     """
 
-    param_name: str  # GH 原名，底線原樣保留（_geometry、context_）
+    param_name: str  # GH 原名，底線原樣保留（_geometry、context_）；v2 群組檔已剝除 RH_IN: 前綴的乾淨名
     label: str = ""
     kind: str  # number|integer|boolean|string|geometry
     param_type: str = ""  # /io 原始 ParamType（保留供除錯）
@@ -52,6 +56,10 @@ class InputSpec(BaseModel):
     enum_values: Optional[list[str]] = None
     at_least: int = 1
     at_most: Optional[int] = 1
+    # /io 原始 Name（v2 群組檔含 "RH_IN:" 前綴，注入 compute 時 ParamName 必須
+    # 完全等於它）。None ⇒ 沿用 param_name（v1 行為：Name 本身即是注入用的名稱）。
+    # 預設 None 保證既有 tools/*.json（無此欄位）反序列化相容。
+    compute_name: Optional[str] = None
 
 
 class OutputSpec(BaseModel):
@@ -59,6 +67,9 @@ class OutputSpec(BaseModel):
     kind: str
     description: str = ""
     unit: str = ""
+    # /io 原始 Name（v2 群組檔含 "RH_OUT:" 前綴）。None ⇒ 沿用 param_name。
+    # 預設 None 保證既有 tools/*.json 反序列化相容。
+    compute_name: Optional[str] = None
 
 
 class ToolManifest(BaseModel):
@@ -100,8 +111,68 @@ def _slugify(stem: str) -> str:
 # ── manifest_from_io ─────────────────────────────────────────────────
 
 
+_RH_IN_PREFIX = "RH_IN:"
+_RH_OUT_PREFIX = "RH_OUT:"
+
+
+def _split_name(name: str, prefix: str) -> tuple[str, Optional[str]]:
+    """
+    /io 原始 Name -> (param_name, compute_name)。
+
+    Name 以 prefix（"RH_IN:"/"RH_OUT:"）開頭 -> 剝除前綴當 param_name、
+    原樣 Name 當 compute_name。剝除後為空字串（Name 恰好等於 prefix）時，
+    param_name 改用 _slugify(compute_name) 當 fallback，保證非空
+    （複用既有 slugify + hash fallback，見 _slugify）。
+
+    否則（v1 行為，無前綴）：param_name=Name、compute_name=None。
+    """
+    if name.startswith(prefix):
+        stripped = name[len(prefix) :]
+        param_name = stripped if stripped else _slugify(name)
+        return param_name, name
+    return name, None
+
+
+def _parse_default(raw_default: Any, param_name: str) -> Any:
+    """
+    /io 回應的 Default 欄位 -> 實際預設值。
+
+    v1（裸值）：原樣回傳。
+    v2（群組檔，DataTree 形）：dict 且含 "InnerTree" -> 取第一個 branch 的
+    第一個 item 的 "data"；data 是字串時嘗試 json.loads（例如 "3.0" ->
+    3.0、"true" -> True），失敗則保留原字串。
+
+    任何步驟出錯（形狀不對、branch/items 為空等）-> 回傳 None 並記
+    warning，不 crash、不讓整個 manifest_from_io 失敗。
+    """
+    if not isinstance(raw_default, dict) or "InnerTree" not in raw_default:
+        return raw_default
+
+    try:
+        inner_tree = raw_default["InnerTree"]
+        first_branch_key = next(iter(inner_tree))
+        first_item = inner_tree[first_branch_key][0]
+        data = first_item["data"]
+        if isinstance(data, str):
+            try:
+                return json.loads(data)
+            except (TypeError, ValueError):
+                return data
+        return data
+    except (StopIteration, IndexError, KeyError, TypeError) as exc:
+        logger.warning(
+            "hoger.manifest: 無法解析 %s 的 DataTree 形 Default: %r (%s)",
+            param_name,
+            raw_default,
+            exc,
+        )
+        return None
+
+
 def _parse_input(raw: dict) -> InputSpec:
     name = raw.get("Name", "")
+    param_name, compute_name = _split_name(name, _RH_IN_PREFIX)
+
     nickname = raw.get("Nickname", "")
     label = nickname if nickname and nickname != name else ""
 
@@ -110,13 +181,14 @@ def _parse_input(raw: dict) -> InputSpec:
 
     at_least = raw.get("AtLeast", 1)
     at_most = raw.get("AtMost", 1)
-    default = raw.get("Default", None)
+    default = _parse_default(raw.get("Default", None), param_name)
 
     # GH 慣例：AtLeast 0（如 context_）代表選填；有 Default 也視為選填。
     required = at_least >= 1 and default is None
 
     return InputSpec(
-        param_name=name,
+        param_name=param_name,
+        compute_name=compute_name,
         label=label,
         kind=kind,
         param_type=param_type,
@@ -132,14 +204,14 @@ def _parse_input(raw: dict) -> InputSpec:
 
 def _parse_output(raw: dict) -> OutputSpec:
     name = raw.get("Name", "")
-    if name.startswith("RH_OUT:"):
-        name = name[len("RH_OUT:") :]
+    param_name, compute_name = _split_name(name, _RH_OUT_PREFIX)
 
     param_type = raw.get("ParamType", "")
     kind = type_mapping.classify(param_type)
 
     return OutputSpec(
-        param_name=name,
+        param_name=param_name,
+        compute_name=compute_name,
         kind=kind,
         description=raw.get("Description", ""),
     )

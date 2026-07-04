@@ -13,3 +13,6 @@ build/
 .env.local
 generated/mcp_config/*.snippet.json
 .claude/
+gh_files/
+scratch/
+*.bak

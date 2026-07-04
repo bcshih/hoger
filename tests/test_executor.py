@@ -646,3 +646,75 @@ def test_run_tool_raw_does_not_call_build_trees(tmp_path, monkeypatch):
 
     # 沒有提供 "width"，若誤走 build_trees 會因 required 缺值而 raise ToolArgError
     run_tool_raw(manifest, [], out_dir=tmp_path)
+
+
+# ── v2: compute_name wiring ─────────────────────────────────────────
+#
+# v2 群組檔的注入名（compute_name，含 "RH_IN:" 前綴）與 AI/MCP 看到的
+# 乾淨名（param_name）分離：args 的 key 用 param_name，tree 的 ParamName
+# 必須用 compute_name（Rhino.Compute 對裸名字靜默忽略，見計畫 §0.6）。
+
+
+def test_build_trees_uses_compute_name_when_present():
+    manifest = _make_manifest(
+        inputs=[
+            InputSpec(
+                param_name="size",
+                kind="number",
+                param_type="Number",
+                compute_name="RH_IN:size",
+            )
+        ]
+    )
+    trees = build_trees(manifest, {"size": 7.5})
+    assert len(trees) == 1
+    assert trees[0]["ParamName"] == "RH_IN:size"
+    assert trees[0]["InnerTree"]["{0}"][0] == {"type": "System.Double", "data": 7.5}
+
+
+def test_build_trees_falls_back_to_param_name_when_compute_name_none():
+    manifest = _make_manifest(
+        inputs=[InputSpec(param_name="_grid_size", kind="number", param_type="Number")]
+    )
+    trees = build_trees(manifest, {"_grid_size": 2.5})
+    assert trees[0]["ParamName"] == "_grid_size"
+
+
+def test_build_trees_compute_name_for_string_and_boolean():
+    manifest = _make_manifest(
+        inputs=[
+            InputSpec(
+                param_name="mode",
+                kind="string",
+                param_type="String",
+                compute_name="RH_IN:mode",
+            ),
+            InputSpec(
+                param_name="run",
+                kind="boolean",
+                param_type="Boolean",
+                compute_name="RH_IN:run",
+            ),
+        ]
+    )
+    trees = build_trees(manifest, {"mode": "fast", "run": True})
+    by_name = {t["ParamName"]: t for t in trees}
+    assert set(by_name) == {"RH_IN:mode", "RH_IN:run"}
+    assert by_name["RH_IN:run"]["InnerTree"]["{0}"][0]["data"] == "true"
+
+
+def test_build_trees_compute_name_for_geometry_encoded():
+    raw = '{"version":10070,"archive3dm":70,"opennurbs":0,"data":"abc"}'
+    manifest = _make_manifest(
+        inputs=[
+            InputSpec(
+                param_name="geo",
+                kind="geometry",
+                param_type="Brep",
+                compute_name="RH_IN:geo",
+            )
+        ]
+    )
+    trees = build_trees(manifest, {"geo": {"encoded": [raw]}})
+    assert trees[0]["ParamName"] == "RH_IN:geo"
+    assert trees[0]["InnerTree"]["{0}"][0]["data"] == raw

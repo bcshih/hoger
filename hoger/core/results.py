@@ -120,9 +120,20 @@ def parse(res: Optional[dict], manifest: ToolManifest) -> dict:
     每個 manifest.outputs 的 param_name 保證有 key（無資料 -> 空 list）。
     res 為 None 或缺 "values" -> 全部空 list，並記一筆 warning。
     res["values"] 中不屬於 manifest.outputs 的 ParamName 一律忽略。
+
+    ParamName 比對規則（v1/v2 相容）：實測 Rhino.Compute 8.11（見
+    tests/test_ghio_marker.py::TestMarkerIntegration 與本 task 的實測結果）
+    /grasshopper 回應的 ParamName 一律是完整形式（含 "RH_OUT:" 前綴，即
+    v1/v2 皆同），從未觀察到剝除前綴的裸名字。但為求穩健（未來 Rhino.Compute
+    行為若改變、或某些自訂元件回傳裸名），比對時優先用 compute_name
+    （manifest 保存的 /io 原始 Name）精確比對；沒有 compute_name 或比對不到
+    時，才 fallback 到既有的剝 "RH_OUT:" 前綴邏輯比對 param_name。
     """
     results: dict = {o.param_name: [] for o in manifest.outputs}
     kind_by_name = {o.param_name: o.kind for o in manifest.outputs}
+    param_name_by_compute_name = {
+        o.compute_name: o.param_name for o in manifest.outputs if o.compute_name
+    }
 
     if not res or "values" not in res:
         logger.warning(
@@ -132,7 +143,10 @@ def parse(res: Optional[dict], manifest: ToolManifest) -> dict:
         return results
 
     for value in res.get("values", []) or []:
-        param_name = _strip_rh_out_prefix(value.get("ParamName", ""))
+        raw_name = value.get("ParamName", "")
+        # 1) 精確比對 compute_name（v2 群組檔：/io 原始 Name，含前綴）。
+        # 2) fallback：剝 "RH_OUT:" 前綴後比對 param_name（v1 既有邏輯）。
+        param_name = param_name_by_compute_name.get(raw_name, _strip_rh_out_prefix(raw_name))
         kind = kind_by_name.get(param_name)
         if kind is None:
             continue  # 未知 ParamName，忽略

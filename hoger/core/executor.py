@@ -40,6 +40,17 @@ class ToolArgError(ValueError):
     """使用者參數錯誤（缺 required、型別錯、幾何載入失敗）——呼叫端回 4xx / MCP isError。"""
 
 
+def _compute_name(spec: InputSpec) -> str:
+    """
+    tree 的 ParamName 用哪個名字送給 compute。
+
+    v2 群組檔：spec.compute_name 是 /io 原始 Name（含 "RH_IN:" 前綴）——
+    注入時 ParamName 必須完全等於它，裸名字會被 Rhino.Compute 靜默忽略。
+    v1（compute_name 為 None）：沿用 param_name，行為不變。
+    """
+    return spec.compute_name or spec.param_name
+
+
 @dataclass
 class ToolResult:
     outputs: dict
@@ -70,7 +81,7 @@ def _build_scalar_tree(spec: InputSpec, value) -> dict:
                 f"invalid value for number parameter '{spec.param_name}': {value!r} "
                 f"(expected a number)"
             ) from exc
-        return scalar_tree(spec.param_name, num)
+        return scalar_tree(_compute_name(spec), num)
 
     if kind == "integer":
         try:
@@ -80,7 +91,7 @@ def _build_scalar_tree(spec: InputSpec, value) -> dict:
                 f"invalid value for integer parameter '{spec.param_name}': {value!r} "
                 f"(expected a number)"
             ) from exc
-        return scalar_tree(spec.param_name, num)
+        return scalar_tree(_compute_name(spec), num)
 
     if kind == "boolean":
         if isinstance(value, bool):
@@ -92,7 +103,7 @@ def _build_scalar_tree(spec: InputSpec, value) -> dict:
                 f"invalid value for boolean parameter '{spec.param_name}': {value!r} "
                 f"(expected bool or 'true'/'false')"
             )
-        return scalar_tree(spec.param_name, flag)
+        return scalar_tree(_compute_name(spec), flag)
 
     if kind == "string":
         if isinstance(value, bool) or not isinstance(value, (str, int, float)):
@@ -100,7 +111,7 @@ def _build_scalar_tree(spec: InputSpec, value) -> dict:
                 f"invalid value for string parameter '{spec.param_name}': {value!r} "
                 f"(expected a string or scalar)"
             )
-        return string_tree(spec.param_name, str(value))
+        return string_tree(_compute_name(spec), str(value))
 
     raise ToolArgError(f"unsupported kind {kind!r} for parameter '{spec.param_name}'")
 
@@ -157,7 +168,7 @@ def _build_geometry_tree(spec: InputSpec, value) -> Optional[dict]:
                 )
             return None
         try:
-            return encoded_tree(spec.param_name, encoded)
+            return encoded_tree(_compute_name(spec), encoded)
         except TypeError as exc:
             raise ToolArgError(
                 f"invalid 'encoded' entry for geometry parameter '{spec.param_name}': {exc}"
@@ -177,7 +188,7 @@ def _build_geometry_tree(spec: InputSpec, value) -> Optional[dict]:
                 f"geometry parameter '{spec.param_name}' is required but no objects "
                 f"were loaded from {file_3dm!r}{layer_info}"
             )
-        return geometry_tree(spec.param_name, objects)
+        return geometry_tree(_compute_name(spec), objects)
 
     raise ToolArgError(
         f"geometry parameter '{spec.param_name}' requires either 'encoded' or 'file_3dm'"
