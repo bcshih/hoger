@@ -651,6 +651,212 @@ body {
   color: var(--ink-1);
 }
 
+.inline-alert p + p {
+  margin-top: 6px;
+}
+
+/* ── scan mode selector (v2 entry cards) ─────────────────────────── */
+
+.scan-mode-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.scan-mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 20px 22px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  color: var(--ink-1);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  transition: border-color 140ms ease, background 140ms ease, transform 100ms ease;
+}
+
+.scan-mode-card:hover {
+  border-color: var(--ink-3);
+  background: var(--bg-2);
+}
+
+.scan-mode-card.active {
+  border-color: var(--signal-amber);
+  background: linear-gradient(155deg, rgba(242, 169, 59, 0.09), transparent 60%), var(--bg-2);
+  box-shadow: 0 0 0 1px rgba(242, 169, 59, 0.25);
+}
+
+.scan-mode-card-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--bg-0);
+  background: var(--signal-amber);
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-weight: 700;
+}
+
+.scan-mode-card-tag-alt {
+  background: var(--signal-blue);
+}
+
+.scan-mode-card-title {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--ink-0);
+  font-family: var(--font-display);
+  letter-spacing: 0.01em;
+}
+
+.scan-mode-card-desc {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+@media (max-width: 720px) {
+  .scan-mode-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── scan stage (candidate scan-and-select) ──────────────────────── */
+
+.scan-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  position: relative;
+}
+
+.scan-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scan-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.scan-summary-filename {
+  margin: 0;
+  font-size: 14.5px;
+  color: var(--ink-0);
+  word-break: break-all;
+}
+
+.scan-summary-meta {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.scan-summary-note {
+  margin: 4px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+  color: var(--signal-amber);
+}
+
+.scan-table .scan-th-check,
+.scan-table .scan-td-check {
+  width: 36px;
+  text-align: center;
+  padding-left: 12px;
+  padding-right: 6px;
+}
+
+.scan-row-checkbox {
+  accent-color: var(--signal-amber);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.scan-row-unchecked {
+  opacity: 0.55;
+}
+
+.scan-feeds-cell {
+  max-width: 260px;
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: normal;
+  word-break: break-word;
+}
+
+.scan-name-input {
+  min-width: 130px;
+}
+
+.existing-mark-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--signal-blue);
+  background: rgba(79, 178, 232, 0.12);
+  border: 1px solid rgba(79, 178, 232, 0.3);
+  white-space: nowrap;
+}
+
+.scan-actions-primary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.scan-check-summary {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.scan-convert-busy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  border: 1px dashed var(--signal-amber-dim);
+  border-radius: var(--radius);
+  background: rgba(242, 169, 59, 0.05);
+  color: var(--ink-1);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 720px) {
+  .scan-actions-primary {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+}
+
 /* ── review stage ─────────────────────────────────────────────────── */
 
 .review-panel {
