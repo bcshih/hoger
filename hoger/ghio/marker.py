@@ -89,6 +89,12 @@ def _validate_marks_and_build_plan(
     of {"guid", "name", "kind"} dicts ("kind" is "IN" or "OUT"). Raises
     MarkError on the first problem found -- nothing is written to disk by
     this function or by the caller before it returns successfully.
+
+    Guid comparison is case-insensitive: `known_guids` must be a set of
+    lowercase guid strings, and each plan entry's "guid" is the normalized
+    (lowercase) form so all downstream use (group ID item, existing-group
+    lookup, post-write verification) operates on one canonical casing.
+    Error messages echo the caller's original string.
     """
     plan = []
     seen_guids = set()
@@ -97,21 +103,22 @@ def _validate_marks_and_build_plan(
         for m in marks:
             guid_str = m["guid"]
             name = m["name"]
+            guid_norm = guid_str.lower()
 
             _validate_name(name)
 
-            if guid_str not in known_guids:
+            if guid_norm not in known_guids:
                 raise MarkError(
                     f"guid {guid_str!r} does not exist in this file's objects"
                 )
 
-            if guid_str in seen_guids:
+            if guid_norm in seen_guids:
                 raise MarkError(
                     f"guid {guid_str!r} is marked more than once in the same call"
                 )
-            seen_guids.add(guid_str)
+            seen_guids.add(guid_norm)
 
-            plan.append({"guid": guid_str, "name": name, "kind": kind})
+            plan.append({"guid": guid_norm, "name": name, "kind": kind})
 
     return plan
 
@@ -239,8 +246,13 @@ def apply_marks(
     # guid-existence validation) -- top-level objects only, matching the
     # scanner's notion of "object" (guids nested inside components are not
     # valid mark targets since the group must wrap a top-level Object chunk).
+    # Guid comparison is case-insensitive throughout: System.Guid's string
+    # formatting (lowercase) is not guaranteed to match the caller's casing,
+    # so the known set is normalized to lowercase and
+    # _validate_marks_and_build_plan normalizes each requested guid the same
+    # way (plan entries carry the normalized form; error messages echo the
+    # caller's original string).
     known_guids = set()
-    top_level = []
     for ch in gh.chunks_of(def_objects):
         container = gh.find_chunk(ch, "Container")
         if container is None:
@@ -252,25 +264,8 @@ def apply_marks(
         except Exception:
             continue
         known_guids.add(inst_guid.lower())
-        top_level.append(inst_guid)
 
-    # Build a case-preserving lookup so error messages/echoing use the
-    # caller's original guid string, while comparisons are case-insensitive
-    # (System.Guid string formatting is not guaranteed to match caller casing).
-    known_guids_lower = {g.lower() for g in known_guids}
-
-    plan = _validate_marks_and_build_plan(
-        input_marks, output_marks, known_guids_lower
-    )
-    # _validate_marks_and_build_plan compares against known_guids_lower using
-    # the raw (possibly mixed-case) guid strings from the caller -- normalize
-    # here for the comparison to actually be case-insensitive.
-    for item in plan:
-        item["guid_lower"] = item["guid"].lower()
-    missing = [item["guid"] for item in plan if item["guid_lower"] not in known_guids_lower]
-    if missing:
-        # Should already have been caught above; defensive re-check.
-        raise MarkError(f"guid {missing[0]!r} does not exist in this file's objects")
+    plan = _validate_marks_and_build_plan(input_marks, output_marks, known_guids)
 
     # ---- validation complete; now safe to touch disk ----
 

@@ -211,6 +211,24 @@ def test_all_or_nothing_valid_guid_not_marked_if_other_invalid(
     assert before == after
 
 
+def test_guid_case_insensitive_matching(fixture_copy, fixture_guids):
+    """Guids must be matched case-insensitively: an uppercase form of an
+    existing InstanceGuid must be accepted and produce a working mark."""
+    upper_slider = fixture_guids["slider"].upper()
+    assert upper_slider != fixture_guids["slider"]  # guard: test is meaningful
+
+    result = marker.apply_marks(
+        fixture_copy,
+        input_marks=[{"guid": upper_slider, "name": "size"}],
+        output_marks=[],
+    )
+    assert result.marked_inputs == ["RH_IN:size"]
+
+    scan = scanner.scan_gh(fixture_copy)
+    slider = next(i for i in scan.inputs if i.instance_guid == fixture_guids["slider"])
+    assert slider.existing_mark == "RH_IN:size"
+
+
 # ── duplicate guid within one call ──────────────────────────────────
 
 
