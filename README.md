@@ -40,7 +40,7 @@
    ```powershell
    .\run_hoger.ps1
    ```
-3. **開啟瀏覽器** `http://localhost:8600`，在「轉換」頁籤拖放 `.gh` 檔案並註冊。
+3. **開啟瀏覽器** `http://localhost:8600`，在「轉換」頁籤選「自動轉換」（預設）並拖放你的 `.gh` 檔案——不需要事先在 GH 檔案裡放任何 Hops 元件或標記。掃描完成後勾選要暴露的輸入/輸出、填參數名，按「開始轉換」；HOGER 會自動在檔案加上 `RH_IN:`/`RH_OUT:` 群組標記（改檔前自動備份 `.bak`），解析出工具定義草稿後即可註冊。
 4. **接上 AI**：於「工具管理」或 `GET /api/mcp-config` 取得設定片段，貼進 Claude Desktop / Cursor 的 MCP 設定即可呼叫工具。
 
 完整操作說明（GH 檔案準備規則、Web UI 三區、MCP/Cursor 接入、Hops 元件用法、疑難排解）請見 **[docs/USAGE.md](docs/USAGE.md)**。
