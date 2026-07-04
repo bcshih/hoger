@@ -207,6 +207,45 @@ def set_int32(parent: Any, name: str, value: int, index: int = -1):
     )
 
 
+def set_drawing_color(parent: Any, name: str, argb: tuple, index: int = -1):
+    """Set a `gh_drawing_color` item from an (a, r, g, b) tuple (each 0-255).
+
+    Maps to GH_Chunk.SetDrawingColor(name, System.Drawing.Color), the writer
+    for the Colour item on a Group's Container chunk (plan section 0.3).
+    """
+    System = _system()
+    import System.Drawing  # noqa: PLC0415
+
+    a, r, g, b = argb
+    color = System.Drawing.Color.FromArgb(int(a), int(r), int(g), int(b))
+    if index < 0:
+        return _invoke(
+            parent, "SetDrawingColor", [System.String, System.Drawing.Color], [name, color]
+        )
+    return _invoke(
+        parent,
+        "SetDrawingColor",
+        [System.String, System.Int32, System.Drawing.Color],
+        [name, index, color],
+    )
+
+
+def remove_item(parent: Any, name: str, index: int = -1) -> bool:
+    """Remove an item so a subsequent set_* call doesn't create a duplicate.
+
+    GH_IO's SetXxx() methods append rather than overwrite an existing item of
+    the same name (observed for ObjectCount when appending Object chunks to
+    DefinitionObjects) -- callers must RemoveItem first when they intend to
+    replace a scalar item's value in place.
+    """
+    System = _system()
+    if index < 0:
+        return bool(_invoke(parent, "RemoveItem", [System.String], [name]))
+    return bool(
+        _invoke(parent, "RemoveItem", [System.String, System.Int32], [name, index])
+    )
+
+
 def guid(s: str):
     """Build a System.Guid from a string."""
     return _system().Guid(s)
