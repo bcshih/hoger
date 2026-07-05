@@ -6,15 +6,20 @@ This is a formalization of the prototype in
 36-object .gh file); see docs/superpowers/plans/2026-07-04-hoger-v2-auto-convert.md
 section 0 for the ground-truth facts this module relies on.
 
-Candidate rules (plan section 2):
+Candidate rules (plan section 2, widened by task v2-G — see
+scratch/spike_v2g/ for the Part 0 evidence this widening is based on):
 - Input candidates: Number Slider (current_value/minimum/maximum), Boolean
   Toggle (current_value), Panel (only if it has at least one downstream
-  consumer), Value List, and top-level "dangling" params (objects with a
-  downstream consumer but no upstream Source — object's own Name is used as
-  object_type since we don't know its concrete param kind from chunk data
+  consumer), Value List, and top-level "dangling" data objects (objects with
+  a downstream consumer but no upstream Source — object's own Name is used
+  as object_type since we don't know its concrete param kind from chunk data
   alone).
-- Output candidates: Panels/params with no downstream consumer at all
-  (fed_by records the upstream component(s) feeding them).
+- Output candidates: ANY non-component top-level data object with no
+  downstream consumer at all — Panel, or any bare parameter (Curve, Surface,
+  Brep, Mesh, Point, Geometry, Text, ...); fed_by records the upstream
+  component(s) feeding them. Number Slider / Boolean Toggle / Value List are
+  excluded even when they have no downstream (a dangling slider as "output"
+  is meaningless — see the comment above PARAM_TYPE_GUIDS).
 - Wiring (feeds / fed_by) requires a full recursive scan of the
   DefinitionObjects chunk tree, because Source[] lists for params nested
   inside components (e.g. a component's own input params) are buried in
@@ -23,6 +28,44 @@ Candidate rules (plan section 2):
   in a Group object's `ID` list AND that Group's NickName contains the
   (case-sensitive) substring "RH_IN" or "RH_OUT" anywhere. The *entire*
   NickName (not just the marker substring) is reported as existing_mark.
+
+--- Part 0 finding (task v2-G): the "component vs data object" structural
+hypothesis is FALSIFIED ---
+
+The original hypothesis (see git history) was that components (objects with
+input/output plugs, e.g. Division, LB Outdoor Solar MRT) could be told apart
+from bare data-carrying params (Param_Brep, Param_Point, ...) by a
+structural fingerprint: components' Container chunk has "param_input"/
+"param_output" sub-chunks, bare params don't.
+
+This was tested against 9 real .gh files (see scratch/spike_v2g/, scripts
+classify.py / final_table.py / collect_guids.py; source files copied to
+scratch/spike_v2g/src/ with md5 verified unchanged before and after) totaling
+144 distinct top-level-object type GUIDs. Result: FALSIFIED in both
+directions —
+  * Many genuine components have NO param_input/param_output chunks at all:
+    Relay, Multiplication/Addition/Subtraction, all "LB *"/"HB *" (Ladybug/
+    Honeybee, which are GhPython-Script-derived and store I/O as
+    "ParameterData" instead), Hops "Get Point"/"Get Number"/"Get Geometry"/
+    "Get Integer"/"Get File Path", Cluster, GhPython/Python 3 Script, Path
+    Mapper, Loop Start/End, Explode Tree, List Item, Merge, Stream Filter,
+    Entwine, Expression, Format, Button, Colour Picker/Swatch, Fish, Text
+    Entity, Tunny. All of these have a Container sub-chunk shape
+    indistinguishable from a bare param (just "Attributes", sometimes plus
+    "ParameterData" or "ListItem" — shapes ALSO seen on genuine bare params).
+  * One GUID (874eebe7-835b-4f4f-9811-97e031c41597, a "Group"-named cluster
+    I/O proxy object, distinct from the normal Group GUID
+    c552a431-af5b-46a9-a8a4-0fcbc27ef596) DOES carry param_input/
+    param_output despite not being a normal top-level data/component object.
+
+Conclusion: chunk shape alone cannot discriminate; the only reliable
+per-session-verified signal remains the object's *type* GUID (the Object
+chunk's own "GUID" item). This module therefore keeps (and widens) the GUID
+allowlist approach rather than replacing it with a structural check. Every
+GUID in PARAM_TYPE_GUIDS below was confirmed, in at least one real file, to
+be a bare Grasshopper parameter (no SolveInstance logic, no input/output
+plugs) via manual cross-reference of scratch/spike_v2g output against the
+known GH component catalog.
 """
 from __future__ import annotations
 
@@ -34,27 +77,78 @@ from hoger.ghio.loader import get_archive_class
 CANDIDATE_INPUT_TYPE_NAMES = {"Number Slider", "Boolean Toggle", "Panel", "Value List"}
 GROUP_TYPE_NAME = "Group"
 
-# Allowlist of component-class GUIDs (the Object chunk's own "GUID" item, i.e.
-# the *type* GUID, not the InstanceGuid) for standalone parameter objects that
-# may be treated as dangling input/output candidates.
+# Number Slider / Boolean Toggle / Value List are terminal input widgets: a
+# dangling one (no downstream) is not a meaningful *output* candidate (there
+# is nothing being "produced" — it's just an unused control). They never
+# reach the output-candidate branch below because CANDIDATE_INPUT_TYPE_NAMES
+# routes them straight to the input branch regardless of wiring (see the
+# main scan loop) — only "Panel" among CANDIDATE_INPUT_TYPE_NAMES falls
+# through to output when it has no downstream. This comment documents that
+# exclusion explicitly since task v2-G asked for it by name.
+
+# Allowlist of *type* GUIDs (the Object chunk's own "GUID" item, not the
+# per-instance InstanceGuid) for bare Grasshopper parameter classes — objects
+# that carry/display data but have no SolveInstance computation and no
+# input/output plugs of their own (Param_Brep, Param_Curve, Param_Mesh, ...).
 #
-# Rationale: objects whose Name is not in CANDIDATE_INPUT_TYPE_NAMES could be
-# either bare params (Param_Brep, Param_Point, ...) or full components (LB
-# Outdoor Solar MRT, Power, Relay, ...). Chunk shape alone cannot reliably
-# distinguish them (both serialize as Object -> Container subtrees), so we
-# only accept types we have positively identified as parameter classes —
-# prefer missing a candidate over mislabeling a component as one.
+# Per the Part 0 finding above, this is the ONLY reliable way (short of
+# loading the full Grasshopper.dll + RhinoCommon.dll + Rhino UI runtime,
+# which this headless GH_IO-only scanner deliberately does not depend on) to
+# tell a bare param apart from a component that happens to have a similarly
+# minimal Container chunk shape (e.g. Relay, Get Point, Button, Fish).
 #
-# To extend: open a .gh containing the param in question, read its Object
-# chunk's "GUID" item (see tests or scratch/spike_v2 scripts for how), verify
-# the object is a bare Grasshopper parameter, and add the GUID here.
+# Any top-level object whose Name is not in CANDIDATE_INPUT_TYPE_NAMES and
+# whose type GUID is NOT in this set is treated as a component and skipped
+# as a standalone candidate (its own nested input params are still captured
+# via the recursive Source scan, so wiring information is not lost) — dangling
+# input/output candidates deliberately favor missing an object over
+# mislabeling a component as one.
 #
-# Currently verified against comfort_in_a_street_canyon_study.gh:
+# GUIDs verified (file-confirmed) against real files during task v2-G
+# (scratch/spike_v2g/src/*.gh — comfort_in_a_street_canyon_study.gh,
+# comfort_in_a_street_canyon_study_hops.gh, hops test.gh, MOO Tool for
+# MFRB.gh, v2-7 離群值+共線性+相關性.gh, 樓梯教學.gh, 量體長柱、女兒牆、樓板 V2.gh):
 PARAM_TYPE_GUIDS = {
     "919e146f-30ae-4aae-be34-4d72f555e7da",  # Param_Brep ("Brep")
     "fbac3e32-f100-4292-8692-77240a42fd1a",  # Param_Point ("Point")
     "ac2bc2cb-70fb-4dd5-9c78-7e1ea97fe278",  # Param_Geometry ("Geometry")
+    "d5967b9f-e8ee-436b-a8ad-29fdcecf32d5",  # Param_Curve ("Curve")
+    "deaf8653-5528-4286-807c-3de8b8dad781",  # Param_Surface ("Surface")
+    "8ec86459-bf01-4409-baee-174d0d2b13d0",  # Param_GenericObject ("Data")
+    "3e8ca6be-fda8-4aaf-b5c0-3c54c8bb7312",  # Param_Number ("Number")
+    "2e3ab970-8545-46bb-836c-1c11e5610bce",  # Param_Integer ("Integer")
+    "16ef3e75-e315-4899-b531-d3166b42dac9",  # Param_Vector ("Vector")
+    # NOTE: "Rectangle" appears under TWO different type GUIDs across the
+    # sample files (abf9c670-... and d93100b6-...) — only one of them
+    # (abf9c670) was confirmed to be the bare Param_Rectangle (no
+    # param_input/output, PersistentData present); d93100b6 was confirmed to
+    # be the "Rectangle" *component* (has param_input/output) and is
+    # correctly excluded. Same ambiguity exists for "Area" (component GUID
+    # 2e205f24 has param_input/output and is excluded; a second GUID
+    # 86b28a7e also named "Area" has no param_input/output but DOES have a
+    # "ParameterData" sub-chunk — the same component-side marker seen on
+    # Multiplication/Addition/Subtraction — so it too is a component, not a
+    # bare param, and is correctly left OUT of this allowlist).
+    "abf9c670-5462-4cd8-acb3-f1ab0256dbf3",  # Param_Rectangle ("Rectangle")
 }
+#
+# Deliberately NOT added despite being requested by the user (面板、文字、線條、
+# 曲面、實體、網格 — Panel/Text/Curve/Surface/Solid/Mesh) because no sample file
+# in this session contained a bare instance of them, so their type GUID could
+# not be directly confirmed:
+#   - Param_Mesh ("Mesh"), Param_TextEntity/Param_String ("Text"/"String"),
+#     Param_Line ("Line"), Param_Plane ("Plane"), Param_Box ("Box")
+# These are extremely likely to work identically once encountered (same
+# Container shape as the verified params above: Attributes [+ PersistentData
+# when a value is baked in]), but per this task's "conservative — prefer
+# missing a candidate over mislabeling" instruction, they are left out of the
+# allowlist until confirmed against a real file. Extend PARAM_TYPE_GUIDS the
+# same way as before: open a .gh with the param, read its Object chunk's
+# "GUID" item, verify no param_input/param_output sub-chunk on Container, add
+# the GUID here with the verifying filename in the comment.
+#
+# Used both for input-side dangling-param detection and output-side
+# non-Panel data-object detection (see the main scan loop in scan_gh()).
 
 # Slider sub-chunk that carries Min/Max/Value.
 _SLIDER_SUBCHUNK = "Slider"
@@ -366,12 +460,15 @@ def scan_gh(path) -> ScanResult:
             )
         else:
             # Non-slider/toggle/panel/valuelist top-level object. Could be a
-            # bare param (Param_Brep, Param_Point, ...) or a full component.
+            # bare param (Param_Brep, Param_Curve, Param_Point, ...) or a
+            # full component (Division, LB Outdoor Solar MRT, Relay, ...).
             # Only objects whose *type* GUID is in the verified allowlist are
-            # considered dangling-param candidates; everything else is treated
-            # as a component and skipped (its own nested input params are
-            # already captured by the recursive Source scan). See
-            # PARAM_TYPE_GUIDS for the rationale and how to extend the list.
+            # considered candidates; everything else is treated as a
+            # component and skipped (its own nested input params are still
+            # captured by the recursive Source scan, so wiring info isn't
+            # lost). See PARAM_TYPE_GUIDS docstring for the Part 0 evidence
+            # behind this (chunk-shape structural checks were tried and
+            # falsified — GUID allowlist is the only reliable signal found).
             if o["type_guid"] not in PARAM_TYPE_GUIDS:
                 continue
             if has_downstream and not has_upstream:
@@ -388,7 +485,15 @@ def scan_gh(path) -> ScanResult:
                         existing_mark=existing_mark,
                     )
                 )
-            elif has_upstream and not has_downstream:
+            elif not has_downstream:
+                # No downstream consumer at all -> output candidate,
+                # regardless of whether it has an upstream Source. This
+                # mirrors the Panel rule above: any data object (Curve,
+                # Surface, Brep, Mesh, Point, Geometry, ...) that nothing
+                # reads from is a candidate output, whether it's fed by a
+                # component (fed_by populated) or simply sitting unconnected
+                # on the canvas (fed_by empty) — widened per task v2-G to
+                # recognize any data object, not just wired-up ones.
                 fed_by = _fed_by_for(o, all_param_records)
                 outputs.append(
                     OutputCandidate(
