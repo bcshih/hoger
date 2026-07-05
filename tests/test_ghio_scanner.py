@@ -369,6 +369,30 @@ def test_moo_no_component_instance_guid_in_any_candidate_list(moo_copy):
     assert candidate_guids.isdisjoint(component_instance_guids)
 
 
+# ── task v2-H: allowlist widened to Mesh/Line/Plane/String/Circle/Box/Boolean ──
+
+
+def test_param_type_guids_includes_v2h_additions():
+    """Regression guard: these GUIDs were added (task v2-H) via web-sourced
+    cross-validation against the Brep/Point/Geometry baseline (see
+    hoger/ghio/scanner.py module docstring + comment above PARAM_TYPE_GUIDS
+    for the validation methodology) rather than direct file confirmation, to
+    cover the standard Grasshopper param types the user explicitly asked for
+    (網格 Mesh、文字 Text/String、線條 Line、平面 Plane). Pins them so a future
+    edit can't silently drop one.
+    """
+    expected = {
+        "1e936df3-0eea-4246-8549-514cb8862b7a",  # Param_Mesh
+        "8529dbdf-9b6f-42e9-8e1f-c7a2bde56a70",  # Param_Line
+        "4f8984c4-7c7a-4d69-b0a2-183cbb330d20",  # Param_Plane
+        "3ede854e-c753-40eb-84cb-b48008f14fd4",  # Param_String
+        "d1028c72-ff86-4057-9eb0-36c687a4d98c",  # Param_Circle
+        "c9482db6-bea9-448d-98ff-fed6d69a8efc",  # Param_Box
+        "cb95db89-6165-43b6-9c41-5702bc5bf137",  # Param_Boolean
+    }
+    assert expected <= scanner.PARAM_TYPE_GUIDS
+
+
 # ── loader ───────────────────────────────────────────────────────────
 
 

@@ -70,7 +70,7 @@ HOGER 把任意 Grasshopper（`.gh`）檔案自動轉換成兩種可被外部呼
 - **任何沒有下游接線的資料物件**都算候選輸出，不限型別——Panel（面板）、Curve（曲線）、Surface（曲面）、Brep（實體）、Point（點）、Geometry（幾何）等等，只要是「沒人接線去讀它」的資料，就可能是你想要的輸出。「來自」欄會顯示是哪個元件的哪個輸出腳位餵給它的（`fed_by`）；沒有上游、單純懸在畫布上的資料物件則 `fed_by` 為空。
   - **例外**：Number Slider / Boolean Toggle / Value List 這三種「純輸入用」的控制元件，即使沒有下游接線也**不會**被當成候選輸出（一個沒接任何東西的滑桿只是沒用到的控制項，不是有意義的輸出）。
   - 元件（有自己的計算邏輯、輸入輸出腳位的物件，例如 Division、LB 系列元件）**永遠不會**出現在候選輸入或候選輸出清單中，只有「資料物件」（面板、滑桿、以及各種參數）才會被列為候選；元件自己的輸入腳位仍會透過遞迴掃描解析出接線關係（見下方「接到」/「來自」欄）。
-  - 目前已對真實檔案驗證可辨識的型別涵蓋 Brep、Point、Geometry、Curve、Surface、一般資料（Data）、Number、Integer、Vector、Rectangle；Mesh、Text/String、Line、Plane 等型別尚未遇到真實檔案驗證，理論上會以同樣方式被辨識，但目前保守地還沒加進判別清單（寧可少列一個候選，也不要誤判元件）——遇到這類檔案回報後可以再擴充。
+  - 目前已涵蓋可辨識的型別：Brep（實體）、Point（點）、Geometry（幾何）、Curve（曲線）、Surface（曲面）、一般資料（Data）、Number（數字）、Integer（整數）、Vector（向量）、Rectangle（矩形）、**Mesh（網格）、Line（線條）、Plane（平面）、String（文字/字串）、Circle（圓）、Box（方塊）、Boolean（布林）**。其中 Brep/Point/Geometry/Curve/Surface/Data/Number/Integer/Vector/Rectangle 已對真實檔案直接驗證過；Mesh/Line/Plane/String/Circle/Box/Boolean 目前尚未遇到含這些型別的真實檔案，改採可信第三方來源交叉比對已驗證型別的 GUID 後採信加入。其他標準參數型別（例如 Arc、Colour、Time、Complex）尚未涵蓋——遇到這類檔案回報後可以再擴充。
 
 掃描結果的「接到」/「來自」欄位就是幫助你判斷「這個候選到底是什麼」用的——同一個滑桿在複雜定義裡可能有好幾個，靠這欄分辨要選哪一個。已經被標記過的物件（無論是之前用自動轉換標記過，或手動加的 `RH_IN:`/`RH_OUT:` 群組）會在「既有標記」欄顯示目前的標記名稱，並且預設勾選、名稱欄預填舊名稱；重新標記同一個物件會直接改名既有群組，不會疊加出兩個群組。
 

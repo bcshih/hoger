@@ -61,11 +61,23 @@ directions —
 Conclusion: chunk shape alone cannot discriminate; the only reliable
 per-session-verified signal remains the object's *type* GUID (the Object
 chunk's own "GUID" item). This module therefore keeps (and widens) the GUID
-allowlist approach rather than replacing it with a structural check. Every
-GUID in PARAM_TYPE_GUIDS below was confirmed, in at least one real file, to
+allowlist approach rather than replacing it with a structural check. Most
+GUIDs in PARAM_TYPE_GUIDS below were confirmed, in at least one real file, to
 be a bare Grasshopper parameter (no SolveInstance logic, no input/output
 plugs) via manual cross-reference of scratch/spike_v2g output against the
-known GH component catalog.
+known GH component catalog; a later batch (task v2-H — Mesh, Line, Plane,
+String, Circle, Box, Boolean) was instead sourced from a trusted third-party
+Grasshopper parameter reference and cross-validated against the file-confirmed
+entries (see the comment above those entries in PARAM_TYPE_GUIDS for detail)
+since no sample file available at the time contained a bare instance of them.
+
+As of task v2-H, PARAM_TYPE_GUIDS covers: Brep, Point, Geometry, Curve,
+Surface, Data (GenericObject), Number, Integer, Vector, Rectangle, Mesh,
+Line, Plane, String, Circle, Box, and Boolean. Types not yet covered
+(Circular Arc, Colour, Time, Complex, and any other standard Param_* not
+listed here) can be added the same way when encountered in a real file or
+independently cross-validated against a trusted source, per the extension
+recipe documented above PARAM_TYPE_GUIDS.
 """
 from __future__ import annotations
 
@@ -130,22 +142,45 @@ PARAM_TYPE_GUIDS = {
     # Multiplication/Addition/Subtraction — so it too is a component, not a
     # bare param, and is correctly left OUT of this allowlist).
     "abf9c670-5462-4cd8-acb3-f1ab0256dbf3",  # Param_Rectangle ("Rectangle")
+    # --- Added task v2-H: web-sourced, cross-validated against Brep/Point/
+    # Geometry (see below) --- no sample .gh file in this session contained a
+    # bare instance of these, so they could not be file-confirmed directly;
+    # instead they were sourced from https://rhino-help.com/help/GrashopperHELP/
+    # (a mirrored/localized copy of GrasshopperDocs' per-parameter help pages,
+    # URL pattern "Params.<Category>.<GUID>.htm"). This source was trusted
+    # only after it reproduced, byte-for-byte, EVERY one of the 8 checkable
+    # pre-existing entries above via live page fetch: Brep
+    # (919e146f-30ae-4aae-be34-4d72f555e7da), Point
+    # (fbac3e32-f100-4292-8692-77240a42fd1a), Geometry
+    # (ac2bc2cb-70fb-4dd5-9c78-7e1ea97fe278), Curve, Surface, Vector,
+    # Rectangle (the correct abf9c670 param GUID, not the d93100b6 component
+    # GUID), Integer, and Number. Each new GUID below was then independently
+    # fetched and its page title confirmed to match the intended type name.
+    "1e936df3-0eea-4246-8549-514cb8862b7a",  # Param_Mesh ("Mesh") - web-sourced, cross-validated
+    "8529dbdf-9b6f-42e9-8e1f-c7a2bde56a70",  # Param_Line ("Line") - web-sourced, cross-validated
+    "4f8984c4-7c7a-4d69-b0a2-183cbb330d20",  # Param_Plane ("Plane") - web-sourced, cross-validated
+    "3ede854e-c753-40eb-84cb-b48008f14fd4",  # Param_String ("String"/text) - web-sourced, cross-validated
+    "d1028c72-ff86-4057-9eb0-36c687a4d98c",  # Param_Circle ("Circle") - web-sourced, cross-validated
+    "c9482db6-bea9-448d-98ff-fed6d69a8efc",  # Param_Box ("Box") - web-sourced, cross-validated
+    "cb95db89-6165-43b6-9c41-5702bc5bf137",  # Param_Boolean ("Boolean") - web-sourced, cross-validated
 }
 #
-# Deliberately NOT added despite being requested by the user (面板、文字、線條、
-# 曲面、實體、網格 — Panel/Text/Curve/Surface/Solid/Mesh) because no sample file
-# in this session contained a bare instance of them, so their type GUID could
-# not be directly confirmed:
-#   - Param_Mesh ("Mesh"), Param_TextEntity/Param_String ("Text"/"String"),
-#     Param_Line ("Line"), Param_Plane ("Plane"), Param_Box ("Box")
-# These are extremely likely to work identically once encountered (same
-# Container shape as the verified params above: Attributes [+ PersistentData
-# when a value is baked in]), but per this task's "conservative — prefer
-# missing a candidate over mislabeling" instruction, they are left out of the
-# allowlist until confirmed against a real file. Extend PARAM_TYPE_GUIDS the
-# same way as before: open a .gh with the param, read its Object chunk's
-# "GUID" item, verify no param_input/param_output sub-chunk on Container, add
-# the GUID here with the verifying filename in the comment.
+# Not added despite being on the initial web-sourced candidate list: Param_Arc
+# ("Circular Arc"), Param_Colour ("Colour"), Param_Time ("Time"), and
+# Param_Complex ("Complex"). Candidate GUIDs for these were found in the same
+# rhino-help.com index page, but the source became unreachable (connection
+# refused) mid-session before their individual pages could be independently
+# fetched and title-confirmed, so per this task's "any type that can't be
+# verified is left out" rule they were not added. Extend PARAM_TYPE_GUIDS the
+# same way once confirmed — either against a real file (open a .gh with the
+# param, read its Object chunk's "GUID" item, verify no param_input/
+# param_output sub-chunk on Container) or against a trusted source
+# cross-validated the same way as above.
+#
+# Untried/uncovered types beyond that list can be added the same way when
+# encountered in a real file: read the Object chunk's "GUID" item, verify no
+# param_input/param_output sub-chunk on Container, add the GUID here with the
+# verifying filename (or verifying source) in the comment.
 #
 # Used both for input-side dangling-param detection and output-side
 # non-Panel data-object detection (see the main scan loop in scan_gh()).
