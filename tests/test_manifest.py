@@ -189,6 +189,68 @@ def test_output_with_only_name_uses_defaults():
     assert spec.description == ""
 
 
+# ── 防禦性解析：key 存在但值為 None（非缺 key）─────────────────────────
+#
+# 真實 Rhino.Compute /io 回應曾對未填寫 Description 的參數回傳
+# `"Description": null`（而不是省略該 key 或給 ""）。dict.get(key, default)
+# 只在 key 完全不存在時才用 default——key 存在但值是 None 時會原樣回傳
+# None，繞過預設值機制。這組測試鎖住每個外部欄位對 explicit null 的防禦。
+
+
+def test_input_explicit_null_description_no_crash():
+    io_response = {"Inputs": [{"Name": "_x", "ParamType": "Number", "Description": None}]}
+    m = manifest_from_io("foo.gh", io_response)
+    assert m.inputs[0].description == ""
+
+
+def test_input_explicit_null_nickname_no_crash():
+    io_response = {"Inputs": [{"Name": "_x", "ParamType": "Number", "Nickname": None}]}
+    m = manifest_from_io("foo.gh", io_response)
+    assert m.inputs[0].label == ""
+
+
+def test_input_explicit_null_param_type_no_crash():
+    # ParamType: null 會在 type_mapping.classify() 的 .lower() 先炸掉，
+    # 比 Pydantic 驗證更早——必須在 _parse_input 內先擋下。
+    io_response = {"Inputs": [{"Name": "_x", "ParamType": None}]}
+    m = manifest_from_io("foo.gh", io_response)
+    assert m.inputs[0].kind == "string"
+    assert m.inputs[0].param_type == ""
+
+
+def test_input_explicit_null_name_no_crash():
+    # Name: null 會在 _split_name() 的 .startswith() 先炸掉——同上必須先擋。
+    io_response = {"Inputs": [{"Name": None, "ParamType": "Number"}]}
+    m = manifest_from_io("foo.gh", io_response)
+    assert len(m.inputs) == 1
+    assert m.inputs[0].param_name == ""
+
+
+def test_output_explicit_null_description_no_crash():
+    io_response = {"Outputs": [{"Name": "RH_OUT:foo", "Description": None}]}
+    m = manifest_from_io("foo.gh", io_response)
+    assert m.outputs[0].description == ""
+
+
+def test_output_explicit_null_param_type_no_crash():
+    io_response = {"Outputs": [{"Name": "RH_OUT:foo", "ParamType": None}]}
+    m = manifest_from_io("foo.gh", io_response)
+    assert m.outputs[0].kind == "string"
+
+
+def test_output_explicit_null_name_no_crash():
+    io_response = {"Outputs": [{"Name": None}]}
+    m = manifest_from_io("foo.gh", io_response)
+    assert len(m.outputs) == 1
+    assert m.outputs[0].param_name == ""
+
+
+def test_top_level_explicit_null_description_no_crash():
+    io_response = {"Description": None, "Inputs": [], "Outputs": []}
+    m = manifest_from_io("foo.gh", io_response)
+    assert m.description == ""
+
+
 def test_nickname_used_as_label_when_different():
     io_response = {
         "Inputs": [

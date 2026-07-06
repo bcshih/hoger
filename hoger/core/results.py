@@ -148,7 +148,9 @@ def parse(res: Optional[dict], manifest: ToolManifest) -> dict:
         return results
 
     for value in res.get("values", []) or []:
-        raw_name = value.get("ParamName", "")
+        # .get(key, "") 只擋 key 缺席，擋不住 key 存在但值明確為 None 的
+        # 情況（外部資料邊界曾實際發生）——用 `or ""` 兩者都擋。
+        raw_name = value.get("ParamName") or ""
         # 1) 精確比對 compute_name（v2 群組檔：/io 原始 Name，含前綴）。
         # 2) fallback：剝 "RH_OUT:" 前綴後比對 param_name（v1 既有邏輯）。
         param_name = param_name_by_compute_name.get(raw_name, _strip_rh_out_prefix(raw_name))

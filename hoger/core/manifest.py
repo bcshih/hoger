@@ -120,6 +120,17 @@ _RH_IN_PREFIX = "RH_IN:"
 _RH_OUT_PREFIX = "RH_OUT:"
 
 
+def _str(raw: dict, key: str, default: str = "") -> str:
+    """
+    dict.get(key, default) 只在 key 完全不存在時才用 default——key 存在但
+    值明確是 None（真實 Rhino.Compute /io 回應對未填寫的欄位會這樣做，
+    例如未填 Description 的參數回傳 "Description": null，而不是省略該
+    key）時會原樣回傳 None，讓下游的 .startswith()/.lower()/Pydantic
+    的 str 型別驗證炸掉。這裡用 `or default` 同時擋兩種情況。
+    """
+    return raw.get(key) or default
+
+
 def _split_name(name: str, prefix: str) -> tuple[str, Optional[str]]:
     """
     /io 原始 Name -> (param_name, compute_name)。
@@ -175,13 +186,13 @@ def _parse_default(raw_default: Any, param_name: str) -> Any:
 
 
 def _parse_input(raw: dict) -> InputSpec:
-    name = raw.get("Name", "")
+    name = _str(raw, "Name")
     param_name, compute_name = _split_name(name, _RH_IN_PREFIX)
 
-    nickname = raw.get("Nickname", "")
+    nickname = _str(raw, "Nickname")
     label = nickname if nickname and nickname != name else ""
 
-    param_type = raw.get("ParamType", "")
+    param_type = _str(raw, "ParamType")
     kind = type_mapping.classify(param_type)
 
     at_least = raw.get("AtLeast", 1)
@@ -197,7 +208,7 @@ def _parse_input(raw: dict) -> InputSpec:
         label=label,
         kind=kind,
         param_type=param_type,
-        description=raw.get("Description", ""),
+        description=_str(raw, "Description"),
         required=required,
         default=default,
         minimum=raw.get("Minimum", None),
@@ -208,17 +219,17 @@ def _parse_input(raw: dict) -> InputSpec:
 
 
 def _parse_output(raw: dict) -> OutputSpec:
-    name = raw.get("Name", "")
+    name = _str(raw, "Name")
     param_name, compute_name = _split_name(name, _RH_OUT_PREFIX)
 
-    param_type = raw.get("ParamType", "")
+    param_type = _str(raw, "ParamType")
     kind = type_mapping.classify(param_type)
 
     return OutputSpec(
         param_name=param_name,
         compute_name=compute_name,
         kind=kind,
-        description=raw.get("Description", ""),
+        description=_str(raw, "Description"),
     )
 
 
@@ -240,7 +251,7 @@ def manifest_from_io(gh_path: str, io_response: dict) -> ToolManifest:
     return ToolManifest(
         id=tool_id,
         display_name=stem,
-        description=io_response.get("Description", ""),
+        description=_str(io_response, "Description"),
         gh_file=gh_path,
         inputs=inputs,
         outputs=outputs,

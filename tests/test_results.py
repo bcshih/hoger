@@ -205,6 +205,20 @@ def test_parse_unknown_param_name_ignored_and_bad_number_skipped(caplog):
     assert any("hoger.results" == r.name for r in caplog.records)
 
 
+def test_parse_explicit_null_param_name_no_crash():
+    # value.get("ParamName", "") 只擋 key 缺席，擋不住 key 存在但值是
+    # None 的情況——真實外部資料邊界曾發生過對應的欄位問題（見
+    # manifest.py 的 _str 修正），這裡鎖住 results.py 的同型態風險。
+    manifest = _make_manifest([OutputSpec(param_name="total", kind="number")])
+    res = {
+        "values": [
+            {"ParamName": None, "InnerTree": {"{0}": [{"type": "System.Double", "data": "5.0"}]}}
+        ]
+    }
+    result = parse(res, manifest)
+    assert result == {"total": []}
+
+
 # ── write_result_3dm ──────────────────────────────────────────────────
 
 
