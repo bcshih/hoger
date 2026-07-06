@@ -32,6 +32,7 @@ from hoger import config
 from hoger.config import GH_FILES_DIR, HOGER_PORT, ROOT, TOOLS_DIR
 from hoger.core import compute_client, executor
 from hoger.core.compute_client import ComputeError
+from hoger.core.describe import build_auto_doc, describe_input, describe_output, describe_tool
 from hoger.core.manifest import ToolManifest, manifest_from_io, to_mcp_tool
 from hoger.ghio import loader, marker, scanner
 from hoger.ghio.marker import MarkError
@@ -79,6 +80,71 @@ def get_health():
 # ── import ───────────────────────────────────────────────────────────
 
 
+def _candidate_index_by_mark(candidates: list) -> dict:
+    """以 existing_mark 為 key 索引 scan candidate（InputCandidate/OutputCandidate）。
+
+    existing_mark 為 None 的 candidate 不索引——無法對回任何 spec（例如直接
+    解析路徑掃到的 Hops 檔案，沒有 RH_IN:/RH_OUT: 分組）。與
+    hoger.core.describe._candidate_index 同一慣例，這裡另建一份是因為 routes
+    層還要用它來決定「是否要覆寫某個 spec 的 description」，這個決定權責
+    在呼叫端（見模組 docstring），describe.py 只管生成文字。
+    """
+    index: dict = {}
+    for cand in candidates:
+        mark = getattr(cand, "existing_mark", None)
+        if mark:
+            index[mark] = cand
+    return index
+
+
+def _find_scan_candidate(spec, index: dict):
+    name = spec.compute_name or spec.param_name
+    return index.get(name)
+
+
+def _enrich_manifest_with_scan(manifest: ToolManifest, gh_path: str) -> ToolManifest:
+    """轉換/匯入後，盡力用 scanner.scan_gh() 的掃描結果補足自動描述。
+
+    Best-effort：scan 失敗（GH_IO 拋例外、檔案格式問題等）只記 warning，
+    絕不讓呼叫端的轉換/匯入流程失敗——自動描述是錦上添花，不是關鍵路徑。
+    規則：
+    - manifest.description（工具層級）只在原本是空字串時，用
+      describe_tool() 生成的文字填入；使用者/上游已提供的說明不覆寫。
+    - 每個 InputSpec/OutputSpec.description 同理，只在空字串時填入
+      describe_input()/describe_output() 生成的文字。
+    - manifest.auto_doc 一律（重新）生成——這是獨立欄位，永遠可以安全地
+      重算，不涉及「覆寫使用者輸入」的疑慮。
+    """
+    try:
+        scan_result = scanner.scan_gh(gh_path)
+    except Exception as exc:  # noqa: BLE001 - best-effort enrichment, never break the caller
+        logger.warning("hoger.routes: 轉換後 scan_gh 失敗，略過自動描述: %s", exc)
+        return manifest
+
+    scan_dict = dataclasses.asdict(scan_result)
+    input_index = _candidate_index_by_mark(scan_result.inputs)
+    output_index = _candidate_index_by_mark(scan_result.outputs)
+
+    if not manifest.description:
+        manifest.description = describe_tool(manifest, scan_result.component_inventory)
+
+    for spec in manifest.inputs:
+        if not spec.description:
+            candidate = _find_scan_candidate(spec, input_index)
+            candidate_dict = dataclasses.asdict(candidate) if candidate is not None else None
+            spec.description = describe_input(spec, candidate_dict)
+
+    for spec in manifest.outputs:
+        if not spec.description:
+            candidate = _find_scan_candidate(spec, output_index)
+            candidate_dict = dataclasses.asdict(candidate) if candidate is not None else None
+            spec.description = describe_output(spec, candidate_dict)
+
+    manifest.auto_doc = build_auto_doc(manifest, scan_dict)
+
+    return manifest
+
+
 def _import_from_gh_path(gh_path: str) -> ToolManifest:
     try:
         io_response = compute_client.io_query(gh_path)
@@ -87,7 +153,12 @@ def _import_from_gh_path(gh_path: str) -> ToolManifest:
             status_code=502,
             detail=f"Rhino.Compute 呼叫失敗，請確認 Rhino.Compute 已啟動：{exc}",
         ) from exc
-    return manifest_from_io(gh_path, io_response)
+    manifest = manifest_from_io(gh_path, io_response)
+
+    if loader.is_available():
+        manifest = _enrich_manifest_with_scan(manifest, gh_path)
+
+    return manifest
 
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50MB；本工具僅供 localhost 單人使用，
@@ -348,6 +419,7 @@ def _convert(body: ConvertBody) -> dict:
         ) from exc
 
     manifest = manifest_from_io(body.gh_path, io_response)
+    manifest = _enrich_manifest_with_scan(manifest, body.gh_path)
 
     return {
         "manifest": manifest.model_dump(),

@@ -82,6 +82,26 @@ def test_fixture_no_existing_marks():
         assert o.existing_mark is None
 
 
+# ── component_inventory (task v3-A) ────────────────────────────────────
+#
+# component_inventory summarizes the top-level objects that were judged to
+# be *components* (skipped as candidates -- see PARAM_TYPE_GUIDS docstring)
+# by Name -> occurrence count. This is the raw material describe.py uses to
+# say things like "this file uses Ladybug (LB *)". The plain_slider_panel.gh
+# fixture has only a slider (candidate input) and a panel (candidate
+# output) -- no component objects -- so its inventory should be empty.
+
+
+def test_fixture_component_inventory_empty():
+    result = scanner.scan_gh(FIXTURE_PATH)
+    assert result.component_inventory == {}
+
+
+def test_component_inventory_is_dict_str_int():
+    result = scanner.scan_gh(FIXTURE_PATH)
+    assert isinstance(result.component_inventory, dict)
+
+
 # ── comfort real-file scan (copied to tmp_path; original never touched) ──
 
 
@@ -225,6 +245,23 @@ def test_comfort_no_existing_marks(comfort_copy):
         assert i.existing_mark is None
     for o in result.outputs:
         assert o.existing_mark is None
+
+
+def test_comfort_component_inventory_has_ladybug_components(comfort_copy):
+    """The comfort file is full of Ladybug ("LB *") components -- these must
+    show up in component_inventory (they were skipped as candidates), and
+    candidate object_types (Brep, Point, Panel, ...) must NOT appear as
+    inventory keys (an object can't be both a candidate and a component).
+    """
+    result = scanner.scan_gh(comfort_copy)
+    inventory = result.component_inventory
+    assert any(name.startswith("LB ") for name in inventory)
+    assert all(count >= 1 for count in inventory.values())
+
+    candidate_types = {i.object_type for i in result.inputs} | {
+        o.object_type for o in result.outputs
+    }
+    assert candidate_types.isdisjoint(inventory.keys())
 
 
 # ── task v2-G: widened output candidates on real gh_files/ ─────────────
@@ -422,6 +459,7 @@ def test_scan_result_is_json_serializable():
     assert isinstance(payload, str)
     reloaded = json.loads(payload)
     assert reloaded["object_count"] == result.object_count
+    assert "component_inventory" in reloaded
 
 
 # ── integration: widened non-Panel candidate recognized by Compute's /io ──

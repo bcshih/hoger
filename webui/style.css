@@ -1637,6 +1637,22 @@ body {
   margin-top: 10px;
 }
 
+.auto-doc-details summary {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  padding: 4px 0;
+}
+
+.auto-doc-details .schema-preview {
+  margin-top: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 720px) {
   .tester-run-row {
     flex-direction: column;

@@ -216,6 +216,14 @@ class ScanResult:
     outputs: list
     already_marked_count: int
     object_count: int
+    # 頂層物件中「非候選、非已知資料物件」的 Name -> 出現次數，即被主掃描迴圈
+    # 判定為元件（component）而跳過候選判定的那些物件（見 scan_gh 主迴圈的
+    # PARAM_TYPE_GUIDS 分支）。這是 hoger.core.describe 產生工具描述的原料
+    # ——元件名稱前綴（"LB ", "HB ", "Karamba"...）揭示這個工具用了哪些已知
+    # Grasshopper 生態系，藉此推斷用途類別。task v3-A 新增欄位；既有消費端
+    # （/api/scan 回應）用 dataclasses.asdict() 印出全部欄位，多一個 key
+    # 不影響既有讀取邏輯（向後相容）。
+    component_inventory: dict = field(default_factory=dict)
 
 
 def _item_present(chunk, name, index=-1) -> bool:
@@ -443,6 +451,7 @@ def scan_gh(path) -> ScanResult:
 
     inputs = []
     outputs = []
+    component_inventory: dict = {}
 
     for o in objects:
         type_name = o["type_name"]
@@ -505,6 +514,12 @@ def scan_gh(path) -> ScanResult:
             # behind this (chunk-shape structural checks were tried and
             # falsified — GUID allowlist is the only reliable signal found).
             if o["type_guid"] not in PARAM_TYPE_GUIDS:
+                # Treated as a component (not a bare param candidate) --
+                # tally it into component_inventory by Name (task v3-A: this
+                # is the raw material hoger.core.describe uses to say things
+                # like "this file uses Ladybug (LB *)").
+                if type_name:
+                    component_inventory[type_name] = component_inventory.get(type_name, 0) + 1
                 continue
             if has_downstream and not has_upstream:
                 current_value, minimum, maximum = _extract_values(type_name, container)
@@ -545,6 +560,7 @@ def scan_gh(path) -> ScanResult:
         outputs=outputs,
         already_marked_count=marker_group_count,
         object_count=object_count,
+        component_inventory=component_inventory,
     )
 
 

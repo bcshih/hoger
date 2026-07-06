@@ -172,6 +172,83 @@ def test_import_compute_error_returns_502(client, monkeypatch, tmp_path):
     assert "detail" in resp.json()
 
 
+def test_import_ghio_available_enriches_manifest(client, monkeypatch, tmp_path):
+    # Direct-parse import path (task v3-A): when GH_IO is available, import
+    # also scans the (already-marked) file and enriches empty description /
+    # auto_doc fields the same way /api/convert does.
+    gh_path = tmp_path / "radiation study.gh"
+    gh_path.write_bytes(b"fake gh content")
+
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr("hoger.api.routes.loader.is_available", lambda: True)
+
+    from hoger.ghio.scanner import InputCandidate, OutputCandidate, ScanResult
+
+    scan_result = ScanResult(
+        inputs=[
+            InputCandidate(
+                instance_guid="g1",
+                object_type="Number Slider",
+                nickname="_grid_size",
+                current_value="1.0",
+                minimum=0.1,
+                maximum=50.0,
+                feeds=[{"component": "LB Sensor Grid", "input": "_grid_size"}],
+                existing_mark=None,  # Hops file: no RH_IN/RH_OUT group -> no match
+            ),
+        ],
+        outputs=[],
+        already_marked_count=0,
+        object_count=5,
+        component_inventory={"LB Sensor Grid": 1},
+    )
+    monkeypatch.setattr("hoger.api.routes.scanner.scan_gh", lambda p: scan_result)
+
+    resp = client.post("/api/import", json={"gh_path": str(gh_path)})
+    assert resp.status_code == 200
+    data = resp.json()
+    # io_response_sample.json Description is "" -> enrichment fills it.
+    assert data["description"] != ""
+    assert data["auto_doc"] != ""
+
+
+def test_import_ghio_unavailable_skips_enrich_no_crash(client, monkeypatch, tmp_path):
+    gh_path = tmp_path / "radiation study.gh"
+    gh_path.write_bytes(b"fake gh content")
+
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr("hoger.api.routes.loader.is_available", lambda: False)
+
+    resp = client.post("/api/import", json={"gh_path": str(gh_path)})
+    assert resp.status_code == 200
+    data = resp.json()
+    # io_response_sample.json Description is "" and enrichment was skipped
+    # (GH_IO unavailable) -- manifest still returned successfully, just
+    # without auto-generated text.
+    assert data["description"] == ""
+    assert data["auto_doc"] == ""
+
+
+def test_import_scan_failure_does_not_break_import(client, monkeypatch, tmp_path, caplog):
+    gh_path = tmp_path / "radiation study.gh"
+    gh_path.write_bytes(b"fake gh content")
+
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr("hoger.api.routes.loader.is_available", lambda: True)
+
+    def raise_scan_error(p):
+        raise ValueError("boom")
+
+    monkeypatch.setattr("hoger.api.routes.scanner.scan_gh", raise_scan_error)
+
+    with caplog.at_level("WARNING"):
+        resp = client.post("/api/import", json={"gh_path": str(gh_path)})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["description"] == ""
+    assert data["auto_doc"] == ""
+
+
 def test_import_rejects_non_gh_extension_json(client, tmp_path):
     txt_path = tmp_path / "not_gh.txt"
     txt_path.write_text("hi", encoding="utf-8")

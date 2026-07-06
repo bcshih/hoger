@@ -295,8 +295,20 @@ function renderDetail() {
           </div>
           <div class="summary-field summary-field-wide">
             <label class="field-label" for="edit-description">描述</label>
-            <textarea id="edit-description" class="input-textarea" rows="2">${escapeHtml(m.description)}</textarea>
+            <textarea id="edit-description" class="input-textarea" rows="2"
+              placeholder="留空時將自動填入生成的說明，仍可自行修改">${escapeHtml(m.description)}</textarea>
           </div>
+          ${
+            m.auto_doc
+              ? `
+          <div class="summary-field summary-field-wide">
+            <details class="auto-doc-details">
+              <summary>查看自動生成的完整說明</summary>
+              <pre class="schema-preview">${escapeHtml(m.auto_doc)}</pre>
+            </details>
+          </div>`
+              : ""
+          }
           <div class="summary-field summary-field-wide">
             <label class="field-label">狀態</label>
             <div class="status-toggle">

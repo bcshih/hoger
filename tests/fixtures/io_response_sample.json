@@ -1,5 +1,5 @@
 {
-  "Description": "radiation study",
+  "Description": "",
   "CacheKey": "md5_xxx",
   "InputNames": ["_geometry", "context_", "_grid_size", "_run"],
   "OutputNames": ["RH_OUT:Mesh", "RH_OUT:total"],

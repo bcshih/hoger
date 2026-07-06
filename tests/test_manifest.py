@@ -209,8 +209,19 @@ def test_nickname_used_as_label_when_different():
 def test_to_mcp_tool_basic_structure(manifest):
     tool = to_mcp_tool(manifest)
     assert tool["name"] == manifest.id
-    assert tool["description"] == f"{manifest.display_name} — {manifest.description}"
+    # io_response_sample.json's top-level Description is "" (task v3-A: kept
+    # empty on purpose so /api/import & /api/convert enrichment tests can
+    # exercise the "fill when empty" branch) -> to_mcp_tool falls back to
+    # display_name alone (no " — " separator). The populated-description
+    # branch is covered explicitly below with its own manifest.
+    assert tool["description"] == manifest.display_name
     assert tool["inputSchema"]["type"] == "object"
+
+
+def test_to_mcp_tool_description_with_description_field():
+    m = manifest_from_io("foo.gh", {"Description": "does things"})
+    tool = to_mcp_tool(m)
+    assert tool["description"] == f"{m.display_name} — {m.description}"
 
 
 def test_to_mcp_tool_description_no_description_field():
@@ -614,6 +625,94 @@ def test_legacy_json_without_compute_name_field_deserializes_with_none():
     m = ToolManifest.model_validate(legacy_dump)
     assert m.inputs[0].compute_name is None
     assert m.outputs[0].compute_name is None
+
+
+# ── auto_doc (task v3-A) ─────────────────────────────────────────────
+
+
+def test_auto_doc_defaults_to_empty_string():
+    m = ToolManifest(
+        id="x",
+        display_name="X",
+        gh_file="foo.gh",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    assert m.auto_doc == ""
+
+
+def test_legacy_json_without_auto_doc_field_deserializes_with_empty_string():
+    legacy_dump = {
+        "id": "legacy-tool",
+        "display_name": "Legacy Tool",
+        "gh_file": "foo.gh",
+        "inputs": [],
+        "outputs": [],
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "updated_at": "2026-01-01T00:00:00+00:00",
+    }
+    m = ToolManifest.model_validate(legacy_dump)
+    assert m.auto_doc == ""
+
+
+def test_to_mcp_tool_appends_auto_doc_when_present():
+    m = ToolManifest(
+        id="x",
+        display_name="X",
+        description="does things",
+        auto_doc="## 工具說明\n這是自動生成的說明文字。",
+        gh_file="foo.gh",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    tool = to_mcp_tool(m)
+    assert tool["description"].startswith("X — does things")
+    assert "\n\n## 工具說明" in tool["description"]
+    assert "這是自動生成的說明文字。" in tool["description"]
+
+
+def test_to_mcp_tool_no_auto_doc_unaffected():
+    m = ToolManifest(
+        id="x",
+        display_name="X",
+        description="does things",
+        gh_file="foo.gh",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    tool = to_mcp_tool(m)
+    assert tool["description"] == "X — does things"
+
+
+def test_to_mcp_tool_description_truncated_at_4000_chars():
+    long_auto_doc = "A" * 5000
+    m = ToolManifest(
+        id="x",
+        display_name="X",
+        description="d",
+        auto_doc=long_auto_doc,
+        gh_file="foo.gh",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    tool = to_mcp_tool(m)
+    assert len(tool["description"]) == 4000
+    assert tool["description"].endswith("…")
+
+
+def test_to_mcp_tool_description_under_4000_not_truncated():
+    m = ToolManifest(
+        id="x",
+        display_name="X",
+        description="d",
+        auto_doc="short doc",
+        gh_file="foo.gh",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    tool = to_mcp_tool(m)
+    assert not tool["description"].endswith("…")
+    assert "short doc" in tool["description"]
 
 
 def test_to_mcp_tool_uses_clean_param_name_not_compute_name():

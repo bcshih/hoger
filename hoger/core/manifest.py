@@ -76,6 +76,11 @@ class ToolManifest(BaseModel):
     id: str
     display_name: str
     description: str = ""
+    # 自動生成的完整說明（hoger.core.describe.build_auto_doc()）。空字串 ⇒
+    # 尚未生成或轉換時 scan 失敗被跳過。預設空字串保證既有 tools/*.json
+    # （無此欄位）反序列化相容。to_mcp_tool() 會把非空的 auto_doc 附加到
+    # description 後面（見該函式），這是 AI 調用端實際看到的內容。
+    auto_doc: str = ""
     gh_file: str
     status: str = "draft"  # draft | registered
     inputs: list[InputSpec] = []
@@ -247,12 +252,27 @@ def manifest_from_io(gh_path: str, io_response: dict) -> ToolManifest:
 # ── to_mcp_tool ──────────────────────────────────────────────────────
 
 
+_MAX_MCP_DESCRIPTION_CHARS = 4000
+
+
 def to_mcp_tool(m: ToolManifest) -> dict:
-    """ToolManifest -> MCP Tool Schema dict。複用 type_mapping.to_json_schema()。"""
+    """ToolManifest -> MCP Tool Schema dict。複用 type_mapping.to_json_schema()。
+
+    description 組成：`display_name — description`（description 為空時只用
+    display_name），若 auto_doc 非空則再附加 `\\n\\n` + auto_doc——這是 AI
+    調用端實際看到、用來理解工具用途與自動填參的內容。總長度上限
+    _MAX_MCP_DESCRIPTION_CHARS，超過從尾部截斷並加 "…"。
+    """
     if m.description:
         description = f"{m.display_name} — {m.description}"
     else:
         description = m.display_name
+
+    if m.auto_doc:
+        description = f"{description}\n\n{m.auto_doc}"
+
+    if len(description) > _MAX_MCP_DESCRIPTION_CHARS:
+        description = description[: _MAX_MCP_DESCRIPTION_CHARS - 1].rstrip() + "…"
 
     properties = {i.param_name: type_mapping.to_json_schema(i) for i in m.inputs}
     # InputSpec.required 是單一真相（見 InputSpec docstring），這裡不再依

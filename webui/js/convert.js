@@ -931,12 +931,24 @@ function renderReviewStage() {
           </div>
           <div class="summary-field summary-field-wide">
             <label class="field-label" for="draft-description">描述</label>
-            <textarea id="draft-description" class="input-textarea" rows="2">${escapeHtml(d.description)}</textarea>
+            <textarea id="draft-description" class="input-textarea" rows="2"
+              placeholder="留空時將自動填入生成的說明，仍可自行修改">${escapeHtml(d.description)}</textarea>
           </div>
           <div class="summary-field summary-field-wide">
             <label class="field-label">來源檔案（唯讀）</label>
             <p class="readonly-value mono">${escapeHtml(d.gh_file)}</p>
           </div>
+          ${
+            d.auto_doc
+              ? `
+          <div class="summary-field summary-field-wide">
+            <details class="auto-doc-details">
+              <summary>查看自動生成的完整說明</summary>
+              <pre class="schema-preview">${escapeHtml(d.auto_doc)}</pre>
+            </details>
+          </div>`
+              : ""
+          }
         </div>
       </div>
 

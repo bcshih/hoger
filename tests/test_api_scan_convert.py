@@ -368,3 +368,187 @@ def test_convert_ghio_unavailable_returns_501(client, monkeypatch, tmp_path):
         },
     )
     assert resp.status_code == 501
+
+
+# ── POST /api/convert: auto-description enrichment (task v3-A) ─────────
+#
+# After marking + io_query succeed, _convert() re-scans the (now-marked)
+# gh_path with scanner.scan_gh() and uses the resulting candidates (matched
+# to manifest specs via existing_mark == spec.compute_name) to fill in any
+# empty description fields and populate manifest.auto_doc. This exercises
+# that wiring with a mocked scanner.scan_gh -- the real scan_gh() behavior
+# is covered by tests/test_ghio_scanner.py.
+
+
+def _post_convert_enrich_scan_result():
+    return ScanResult(
+        inputs=[
+            InputCandidate(
+                instance_guid="11111111-1111-1111-1111-111111111111",
+                object_type="Number Slider",
+                nickname="RH_IN:_grid_size",
+                current_value="1.0",
+                minimum=0.1,
+                maximum=50.0,
+                feeds=[{"component": "LB Sensor Grid", "input": "_grid_size"}],
+                existing_mark="RH_IN:_grid_size",
+            ),
+        ],
+        outputs=[
+            OutputCandidate(
+                instance_guid="22222222-2222-2222-2222-222222222222",
+                object_type="Panel",
+                nickname="RH_OUT:total",
+                fed_by=[{"component": "LB UTCI Comfort", "output": "total"}],
+                existing_mark="RH_OUT:total",
+            ),
+        ],
+        already_marked_count=2,
+        object_count=20,
+        component_inventory={"LB Sensor Grid": 1, "LB UTCI Comfort": 1, "Division": 3},
+    )
+
+
+def test_convert_enrich_fills_empty_tool_description(client, monkeypatch, tmp_path):
+    _available(monkeypatch)
+    gh_path = tmp_path / "model.gh"
+    gh_path.write_bytes(b"content")
+
+    mark_result = MarkResult(
+        backup_path=str(tmp_path / "model.20260704_120000.bak"),
+        marked_inputs=["RH_IN:_grid_size"],
+        marked_outputs=["RH_OUT:total"],
+        updated=[],
+    )
+    monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr(
+        "hoger.api.routes.scanner.scan_gh",
+        lambda p: _post_convert_enrich_scan_result(),
+    )
+
+    resp = client.post(
+        "/api/convert",
+        json={
+            "gh_path": str(gh_path),
+            "inputs": [{"guid": "11111111-1111-1111-1111-111111111111", "name": "_grid_size"}],
+            "outputs": [{"guid": "22222222-2222-2222-2222-222222222222", "name": "total"}],
+        },
+    )
+    assert resp.status_code == 200
+    manifest = resp.json()["manifest"]
+
+    # io_response_sample.json's top-level "Description" is empty -> enrich fills it.
+    assert manifest["description"] != ""
+    assert manifest["auto_doc"] != ""
+    assert "LB Sensor Grid" in manifest["auto_doc"] or "Ladybug" in manifest["auto_doc"]
+
+
+def test_convert_enrich_does_not_overwrite_existing_param_description(client, monkeypatch, tmp_path):
+    # io_response_sample.json's Inputs already carry non-empty Description
+    # fields (e.g. "_grid_size" -> "網格大小（公尺）") -- enrichment must never
+    # clobber those.
+    _available(monkeypatch)
+    gh_path = tmp_path / "model.gh"
+    gh_path.write_bytes(b"content")
+
+    mark_result = MarkResult(
+        backup_path=str(tmp_path / "model.20260704_120000.bak"),
+        marked_inputs=["RH_IN:_grid_size"],
+        marked_outputs=["RH_OUT:total"],
+        updated=[],
+    )
+    monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr(
+        "hoger.api.routes.scanner.scan_gh",
+        lambda p: _post_convert_enrich_scan_result(),
+    )
+
+    resp = client.post(
+        "/api/convert",
+        json={
+            "gh_path": str(gh_path),
+            "inputs": [{"guid": "11111111-1111-1111-1111-111111111111", "name": "_grid_size"}],
+            "outputs": [{"guid": "22222222-2222-2222-2222-222222222222", "name": "total"}],
+        },
+    )
+    assert resp.status_code == 200
+    manifest = resp.json()["manifest"]
+    grid = next(i for i in manifest["inputs"] if i["param_name"] == "_grid_size")
+    assert grid["description"] == "網格大小（公尺）"
+
+
+def test_convert_enrich_scan_failure_does_not_break_convert(client, monkeypatch, tmp_path, caplog):
+    # If the post-mark re-scan raises (e.g. GH_IO hiccup), convert must still
+    # succeed -- enrichment is best-effort, not load-bearing.
+    _available(monkeypatch)
+    gh_path = tmp_path / "model.gh"
+    gh_path.write_bytes(b"content")
+
+    mark_result = MarkResult(
+        backup_path=str(tmp_path / "model.20260704_120000.bak"),
+        marked_inputs=["RH_IN:_grid_size"],
+        marked_outputs=["RH_OUT:total"],
+        updated=[],
+    )
+    monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+
+    def raise_scan_error(p):
+        raise ValueError("boom")
+
+    monkeypatch.setattr("hoger.api.routes.scanner.scan_gh", raise_scan_error)
+
+    with caplog.at_level("WARNING"):
+        resp = client.post(
+            "/api/convert",
+            json={
+                "gh_path": str(gh_path),
+                "inputs": [{"guid": "11111111-1111-1111-1111-111111111111", "name": "_grid_size"}],
+                "outputs": [{"guid": "22222222-2222-2222-2222-222222222222", "name": "total"}],
+            },
+        )
+    assert resp.status_code == 200
+    manifest = resp.json()["manifest"]
+    # No enrichment happened (scan failed) -- description stays as /io reported it.
+    assert manifest["description"] == ""
+    assert manifest["auto_doc"] == ""
+
+
+def test_convert_enrich_user_supplied_top_level_description_not_overwritten(client, monkeypatch, tmp_path):
+    # io_response_sample.json's top-level Description is "" so this test uses
+    # a variant response with a non-empty Description to prove enrich skips it.
+    _available(monkeypatch)
+    gh_path = tmp_path / "model.gh"
+    gh_path.write_bytes(b"content")
+
+    io_with_desc = _io_sample()
+    io_with_desc["Description"] = "使用者已填的說明"
+
+    mark_result = MarkResult(
+        backup_path=str(tmp_path / "model.20260704_120000.bak"),
+        marked_inputs=["RH_IN:_grid_size"],
+        marked_outputs=["RH_OUT:total"],
+        updated=[],
+    )
+    monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: io_with_desc)
+    monkeypatch.setattr(
+        "hoger.api.routes.scanner.scan_gh",
+        lambda p: _post_convert_enrich_scan_result(),
+    )
+
+    resp = client.post(
+        "/api/convert",
+        json={
+            "gh_path": str(gh_path),
+            "inputs": [{"guid": "11111111-1111-1111-1111-111111111111", "name": "_grid_size"}],
+            "outputs": [{"guid": "22222222-2222-2222-2222-222222222222", "name": "total"}],
+        },
+    )
+    assert resp.status_code == 200
+    manifest = resp.json()["manifest"]
+    assert manifest["description"] == "使用者已填的說明"
+    # auto_doc is still generated (separate field, always safe to (re)compute).
+    assert manifest["auto_doc"] != ""
