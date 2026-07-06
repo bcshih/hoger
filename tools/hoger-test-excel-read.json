@@ -1,0 +1,80 @@
+{
+  "id": "hoger-test-excel-read",
+  "display_name": "hoger test_excel read",
+  "description": "",
+  "gh_file": "C:\\Users\\User\\Desktop\\Hoger\\gh_files\\hoger test_excel read.gh",
+  "status": "registered",
+  "inputs": [
+    {
+      "param_name": "WorkbookFilepath",
+      "label": "",
+      "kind": "string",
+      "param_type": "Text",
+      "description": "",
+      "required": false,
+      "default": "C:\\Users\\User\\Downloads\\Sensitivity Analysis2.xlsx",
+      "minimum": null,
+      "maximum": null,
+      "enum_values": null,
+      "at_least": 1,
+      "at_most": 2147483647,
+      "compute_name": "RH_IN:WorkbookFilepath"
+    },
+    {
+      "param_name": "WorksheetName",
+      "label": "",
+      "kind": "string",
+      "param_type": "Text",
+      "description": "",
+      "required": false,
+      "default": "Xn1",
+      "minimum": null,
+      "maximum": null,
+      "enum_values": null,
+      "at_least": 1,
+      "at_most": 2147483647,
+      "compute_name": "RH_IN:WorksheetName"
+    },
+    {
+      "param_name": "Range",
+      "label": "",
+      "kind": "string",
+      "param_type": "Text",
+      "description": "",
+      "required": false,
+      "default": "A1:AA38",
+      "minimum": null,
+      "maximum": null,
+      "enum_values": null,
+      "at_least": 1,
+      "at_most": 2147483647,
+      "compute_name": "RH_IN:Range"
+    },
+    {
+      "param_name": "Stream",
+      "label": "",
+      "kind": "boolean",
+      "param_type": "Boolean",
+      "description": "",
+      "required": false,
+      "default": true,
+      "minimum": null,
+      "maximum": null,
+      "enum_values": null,
+      "at_least": 1,
+      "at_most": 2147483647,
+      "compute_name": "RH_IN:Stream"
+    }
+  ],
+  "outputs": [
+    {
+      "param_name": "Data",
+      "kind": "string",
+      "description": "",
+      "unit": "",
+      "compute_name": "RH_OUT:Data"
+    }
+  ],
+  "created_at": "2026-07-04T15:49:48.731256+00:00",
+  "updated_at": "2026-07-04T15:49:51.195252+00:00"
+}

@@ -1,6 +1,22 @@
 # HOGER
 
-把任意 Grasshopper（`.gh`）檔案，透過 Rhino.Compute 自動轉換成 **Hops 端點** 與 **MCP 工具**，讓 AI（Claude Desktop、Cursor…）與 Grasshopper 都能無頭（headless）呼叫你的運算定義。
+> **[🇺🇸 English README (英文版說明)](README_EN.md)** | **[🤖 AI 代理專用全自動安裝手冊 (AGENTS.md)](AGENTS.md)**
+
+把任意 Grasshopper（`.gh`）檔案，透過 Rhino.Compute 自動轉換成 **Hops 端點** 與 **MCP 工具**，讓 AI（Antigravity、Claude Desktop、Cursor…）與 Grasshopper 都能無頭（headless）呼叫你的運算定義。
+
+---
+
+## 🤖 AI 代理一鍵全自動安裝與無痛升級 (AI-Ready Repository)
+
+您可以直接把本 GitHub 專案網址貼給您的 AI 助理（Antigravity、Claude Desktop、Cursor、Cline、Windsurf）：
+> *「請幫我安裝並綁定這套 Grasshopper AI MCP 工具庫：https://github.com/bcshih/hoger」*
+
+您的 AI 助理將會自動閱讀 **[AGENTS.md](AGENTS.md)** 指南，並幫您在背景完成：
+1. 自動下載專案並建立 100% 隔離的 Python 虛擬環境 (`.venv`)。
+2. 自動檢驗電腦上的 **Rhino 7** 或 **Rhino 8** Grasshopper SDK 與 `Rhino.Compute` 連線狀態。
+3. 自動在您的 Windows 桌面上建立 **「🧩 HOGER MCP 工具管理後台.lnk」** 捷徑。
+4. 以「非破壞性安全合併」的方式將設定注入您的 AI 軟體（絕不覆蓋原有其他工具）！
+5. **未來升級**：隨時執行 **`一鍵升級HOGER.bat`** 即可同步最新功能，您自行產生的 Grasshopper 工具 100% 被保留！
 
 ## 架構
 
