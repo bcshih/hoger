@@ -91,7 +91,7 @@ def test_import_json_gh_path(client, monkeypatch, tmp_path):
     gh_path.write_bytes(b"fake gh content")
 
     monkeypatch.setattr(
-        "hoger.api.routes.compute_client.io_query", lambda p: _io_sample()
+        "hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample()
     )
 
     resp = client.post("/api/import", json={"gh_path": str(gh_path)})
@@ -110,7 +110,7 @@ def test_import_does_not_persist_to_tools_dir(client, monkeypatch, tmp_path, iso
     gh_path = tmp_path / "radiation study.gh"
     gh_path.write_bytes(b"fake gh content")
     monkeypatch.setattr(
-        "hoger.api.routes.compute_client.io_query", lambda p: _io_sample()
+        "hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample()
     )
 
     resp = client.post("/api/import", json={"gh_path": str(gh_path)})
@@ -120,7 +120,7 @@ def test_import_does_not_persist_to_tools_dir(client, monkeypatch, tmp_path, iso
 
 def test_import_multipart_upload(client, monkeypatch, isolated_dirs):
     monkeypatch.setattr(
-        "hoger.api.routes.compute_client.io_query", lambda p: _io_sample()
+        "hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample()
     )
 
     file_content = b"fake gh binary content"
@@ -139,7 +139,7 @@ def test_import_multipart_upload(client, monkeypatch, isolated_dirs):
 
 def test_import_multipart_upload_overwrites_existing(client, monkeypatch, isolated_dirs):
     monkeypatch.setattr(
-        "hoger.api.routes.compute_client.io_query", lambda p: _io_sample()
+        "hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample()
     )
     existing = isolated_dirs["gh_dir"] / "uploaded.gh"
     existing.write_bytes(b"old content")
@@ -162,7 +162,7 @@ def test_import_compute_error_returns_502(client, monkeypatch, tmp_path):
     gh_path = tmp_path / "test.gh"
     gh_path.write_bytes(b"content")
 
-    def raise_compute_error(p):
+    def raise_compute_error(p, **kw):
         raise ComputeError("Rhino.Compute HTTP 500: boom", status_code=500, body="boom")
 
     monkeypatch.setattr("hoger.api.routes.compute_client.io_query", raise_compute_error)
@@ -179,7 +179,7 @@ def test_import_ghio_available_enriches_manifest(client, monkeypatch, tmp_path):
     gh_path = tmp_path / "radiation study.gh"
     gh_path.write_bytes(b"fake gh content")
 
-    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample())
     monkeypatch.setattr("hoger.api.routes.loader.is_available", lambda: True)
 
     from hoger.ghio.scanner import InputCandidate, OutputCandidate, ScanResult
@@ -216,7 +216,7 @@ def test_import_ghio_unavailable_skips_enrich_no_crash(client, monkeypatch, tmp_
     gh_path = tmp_path / "radiation study.gh"
     gh_path.write_bytes(b"fake gh content")
 
-    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample())
     monkeypatch.setattr("hoger.api.routes.loader.is_available", lambda: False)
 
     resp = client.post("/api/import", json={"gh_path": str(gh_path)})
@@ -233,7 +233,7 @@ def test_import_scan_failure_does_not_break_import(client, monkeypatch, tmp_path
     gh_path = tmp_path / "radiation study.gh"
     gh_path.write_bytes(b"fake gh content")
 
-    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample())
     monkeypatch.setattr("hoger.api.routes.loader.is_available", lambda: True)
 
     def raise_scan_error(p):
@@ -274,7 +274,7 @@ def test_import_multipart_empty_filename_returns_400(client):
 
 def test_import_multipart_sanitizes_path_traversal_filename(client, monkeypatch, isolated_dirs, tmp_path):
     monkeypatch.setattr(
-        "hoger.api.routes.compute_client.io_query", lambda p: _io_sample()
+        "hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample()
     )
 
     resp = client.post(
@@ -294,7 +294,7 @@ def test_import_multipart_sanitizes_path_traversal_filename(client, monkeypatch,
 
 def test_import_multipart_sanitizes_windows_absolute_path_filename(client, monkeypatch, isolated_dirs):
     monkeypatch.setattr(
-        "hoger.api.routes.compute_client.io_query", lambda p: _io_sample()
+        "hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample()
     )
 
     resp = client.post(
@@ -314,7 +314,7 @@ def test_import_multipart_sanitizes_windows_absolute_path_filename(client, monke
 def test_import_multipart_no_files_outside_gh_dir(client, monkeypatch, isolated_dirs, tmp_path):
     """路徑逃逸/絕對路徑檔名消毒後，GH_FILES_DIR 外不應出現任何新檔案。"""
     monkeypatch.setattr(
-        "hoger.api.routes.compute_client.io_query", lambda p: _io_sample()
+        "hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample()
     )
 
     before = set(tmp_path.rglob("*"))

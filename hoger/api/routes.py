@@ -405,8 +405,13 @@ def _convert(body: ConvertBody) -> dict:
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    # /io 逾時依標記數量分級：>200 個標記的大型定義解析明顯更久，給到
+    # 540s（前端對應給 10 分鐘）；其餘維持預設 300s。
+    total_marks = len(input_marks) + len(output_marks)
+    io_timeout = 540 if total_marks > 200 else 300
+
     try:
-        io_response = compute_client.io_query(body.gh_path)
+        io_response = compute_client.io_query(body.gh_path, timeout=io_timeout)
     except ComputeError as exc:
         raise HTTPException(
             status_code=502,

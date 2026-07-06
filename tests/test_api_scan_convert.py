@@ -237,7 +237,7 @@ def test_convert_success(client, monkeypatch, tmp_path):
         updated=[],
     )
     monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
-    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample())
 
     resp = client.post(
         "/api/convert",
@@ -255,6 +255,48 @@ def test_convert_success(client, monkeypatch, tmp_path):
     assert data["updated"] == []
     assert "manifest" in data
     assert len(data["manifest"]["inputs"]) == 4  # from io_response_sample.json
+
+
+@pytest.mark.parametrize(
+    "n_inputs,n_outputs,expected_timeout",
+    [
+        (150, 60, 540),  # 210 個標記 > 200 -> 540s
+        (60, 40, 300),  # 100 個標記（不 > 100 也不 > 200）-> 預設 300s
+        (2, 1, 300),  # 小定義 -> 預設 300s
+    ],
+)
+def test_convert_io_timeout_tiered_by_mark_count(
+    client, monkeypatch, tmp_path, n_inputs, n_outputs, expected_timeout
+):
+    """/io 逾時依標記數量分級（前端 convert 逾時同步分級，見 convert.js）。"""
+    _available(monkeypatch)
+    gh_path = tmp_path / "model.gh"
+    gh_path.write_bytes(b"content")
+
+    mark_result = MarkResult(backup_path=None, marked_inputs=[], marked_outputs=[], updated=[])
+    monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
+
+    captured = {}
+
+    def fake_io_query(p, **kw):
+        captured.update(kw)
+        return _io_sample()
+
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", fake_io_query)
+
+    def guid(i):
+        return f"{i:08d}-1111-1111-1111-111111111111"
+
+    resp = client.post(
+        "/api/convert",
+        json={
+            "gh_path": str(gh_path),
+            "inputs": [{"guid": guid(i), "name": f"in_{i}"} for i in range(n_inputs)],
+            "outputs": [{"guid": guid(10000 + i), "name": f"out_{i}"} for i in range(n_outputs)],
+        },
+    )
+    assert resp.status_code == 200
+    assert captured.get("timeout") == expected_timeout
 
 
 def test_convert_empty_lists_returns_400(client, monkeypatch, tmp_path):
@@ -334,7 +376,7 @@ def test_convert_io_query_compute_error_returns_502_with_backup_hint(client, mon
     )
     monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
 
-    def raise_compute_error(p):
+    def raise_compute_error(p, **kw):
         raise ComputeError("Rhino.Compute HTTP 500: boom", status_code=500, body="boom")
 
     monkeypatch.setattr("hoger.api.routes.compute_client.io_query", raise_compute_error)
@@ -421,7 +463,7 @@ def test_convert_enrich_fills_empty_tool_description(client, monkeypatch, tmp_pa
         updated=[],
     )
     monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
-    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample())
     monkeypatch.setattr(
         "hoger.api.routes.scanner.scan_gh",
         lambda p: _post_convert_enrich_scan_result(),
@@ -459,7 +501,7 @@ def test_convert_enrich_does_not_overwrite_existing_param_description(client, mo
         updated=[],
     )
     monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
-    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample())
     monkeypatch.setattr(
         "hoger.api.routes.scanner.scan_gh",
         lambda p: _post_convert_enrich_scan_result(),
@@ -493,7 +535,7 @@ def test_convert_enrich_scan_failure_does_not_break_convert(client, monkeypatch,
         updated=[],
     )
     monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
-    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: _io_sample())
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample())
 
     def raise_scan_error(p):
         raise ValueError("boom")
@@ -533,7 +575,7 @@ def test_convert_enrich_user_supplied_top_level_description_not_overwritten(clie
         updated=[],
     )
     monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
-    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p: io_with_desc)
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p, **kw: io_with_desc)
     monkeypatch.setattr(
         "hoger.api.routes.scanner.scan_gh",
         lambda p: _post_convert_enrich_scan_result(),

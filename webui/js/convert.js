@@ -32,6 +32,15 @@ const SCAN_TIMEOUT_MS = 180000;
 const IMPORT_TIMEOUT_MS = 330000;
 const CONVERT_TIMEOUT_MS = 420000;
 
+// convert 逾時依勾選的標記數量分級（後端 /io 逾時同步分級，見
+// routes.py）：輸入+輸出 >200 → 10 分鐘；>100 → 7 分鐘（即現行預設值）；
+// 其他 → 維持 CONVERT_TIMEOUT_MS。
+function convertTimeoutFor(totalMarks) {
+  if (totalMarks > 200) return 600000;
+  if (totalMarks > 100) return 420000;
+  return CONVERT_TIMEOUT_MS;
+}
+
 // stage: "import" | "scan" | "review" | "done"
 const STATE = {
   stage: "import",
@@ -805,7 +814,7 @@ async function submitConvert() {
     const result = await api("/api/convert", {
       method: "POST",
       body: { gh_path: STATE.scanData.gh_path, inputs, outputs },
-      timeoutMs: CONVERT_TIMEOUT_MS,
+      timeoutMs: convertTimeoutFor(inputs.length + outputs.length),
     });
     STATE.scanBusy = false;
     STATE.draft = result.manifest;
