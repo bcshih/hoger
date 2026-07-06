@@ -219,6 +219,12 @@ body {
   font-family: var(--font-mono);
 }
 
+/* display:flex 會蓋掉 HTML hidden 屬性的 UA 預設隱藏——必須顯式補回，
+   否則 Compute 恢復連線後橫幅永遠不會消失 */
+.banner[hidden] {
+  display: none;
+}
+
 .banner-icon {
   color: var(--signal-amber);
   font-size: 14px;

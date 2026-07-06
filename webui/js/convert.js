@@ -23,6 +23,15 @@ import { escapeHtml, kindBadge, validateId, bindEditableCells, ID_HINT } from ".
 const NAME_PATTERN = /^[A-Za-z0-9_]+$/;
 const NAME_HINT = "僅限英數字與底線（^[A-Za-z0-9_]+$）。";
 
+// api.js 預設逾時只有 15 秒——大型 GH 檔案（數千物件）的掃描/標記/解析
+// 遠超過這個值，必須逐呼叫放寬：
+// - scan：GH_IO 遞迴掃描整棵定義樹
+// - import：後端打 Rhino.Compute /io（其自身上限 300 秒）
+// - convert：標記寫檔 + 寫後重掃驗證 + /io 解析，三段相加最久
+const SCAN_TIMEOUT_MS = 180000;
+const IMPORT_TIMEOUT_MS = 330000;
+const CONVERT_TIMEOUT_MS = 420000;
+
 // stage: "import" | "scan" | "review" | "done"
 const STATE = {
   stage: "import",
@@ -309,7 +318,11 @@ async function submitFileForImport(file) {
   formData.append("file", file, file.name);
 
   try {
-    const manifest = await api("/api/import", { method: "POST", body: formData });
+    const manifest = await api("/api/import", {
+      method: "POST",
+      body: formData,
+      timeoutMs: IMPORT_TIMEOUT_MS,
+    });
     onImportSuccess(manifest);
   } catch (err) {
     onImportError(err);
@@ -325,6 +338,7 @@ async function submitPathForImport(ghPath) {
     const manifest = await api("/api/import", {
       method: "POST",
       body: { gh_path: ghPath },
+      timeoutMs: IMPORT_TIMEOUT_MS,
     });
     onImportSuccess(manifest);
   } catch (err) {
@@ -368,7 +382,11 @@ async function submitFileForScan(file) {
   formData.append("file", file, file.name);
 
   try {
-    const scanData = await api("/api/scan", { method: "POST", body: formData });
+    const scanData = await api("/api/scan", {
+      method: "POST",
+      body: formData,
+      timeoutMs: SCAN_TIMEOUT_MS,
+    });
     onScanSuccess(scanData, file.name);
   } catch (err) {
     onScanError(err);
@@ -384,6 +402,7 @@ async function submitPathForScan(ghPath) {
     const scanData = await api("/api/scan", {
       method: "POST",
       body: { gh_path: ghPath },
+      timeoutMs: SCAN_TIMEOUT_MS,
     });
     onScanSuccess(scanData, ghPath.replace(/\\/g, "/").split("/").pop());
   } catch (err) {
@@ -786,6 +805,7 @@ async function submitConvert() {
     const result = await api("/api/convert", {
       method: "POST",
       body: { gh_path: STATE.scanData.gh_path, inputs, outputs },
+      timeoutMs: CONVERT_TIMEOUT_MS,
     });
     STATE.scanBusy = false;
     STATE.draft = result.manifest;
@@ -817,6 +837,7 @@ async function reimportAfterMark() {
     const manifest = await api("/api/import", {
       method: "POST",
       body: { gh_path: STATE.scanData.gh_path },
+      timeoutMs: IMPORT_TIMEOUT_MS,
     });
     STATE.scanReimportBusy = false;
     STATE.draft = manifest;

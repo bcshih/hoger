@@ -68,7 +68,8 @@ def io_query(gh_path: str) -> dict:
     讀取 .gh 檔案 -> base64 -> POST {COMPUTE_URL}/io，解析輸入/輸出結構。
 
     body: {"algo": <base64>, "pointer": None}
-    timeout: 120s
+    timeout: 300s（大型 GH 檔案——數千物件、大量標記——的 /io 解析可能
+    遠超 2 分鐘，尤其 compute 冷啟動載入外掛時；原 120s 在真實檔案上不足）
 
     - 空 body 或非 JSON body -> raise ComputeError（含狀態碼與 body 前 2000 字）
     - 非 2xx 但有 JSON body -> raise ComputeError 並附 body 內容
@@ -83,7 +84,7 @@ def io_query(gh_path: str) -> dict:
         url,
         data=json.dumps(payload),
         headers={"Content-Type": "application/json"},
-        timeout=120,
+        timeout=300,
     )
 
     body = _body_text(resp)

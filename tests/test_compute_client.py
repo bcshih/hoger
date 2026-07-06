@@ -125,7 +125,8 @@ def test_io_query_payload_is_base64_and_pointer_none(monkeypatch, sample_gh):
     expected_algo = base64.b64encode(sample_gh.read_bytes()).decode("utf-8")
     assert payload["algo"] == expected_algo
     assert payload["pointer"] is None
-    assert captured["kwargs"].get("timeout") == 120
+    # 300s：大型 GH 檔案的 /io 解析在真實檔案上曾超過原本的 120s
+    assert captured["kwargs"].get("timeout") == 300
 
 
 # ── evaluate ─────────────────────────────────────────────────────────
