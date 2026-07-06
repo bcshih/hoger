@@ -43,6 +43,24 @@ _MAX_FEEDS_LISTED = 3
 _MAX_TOP_COMPONENTS = 5
 _MIN_TOP_COMPONENTS = 3
 
+# ── 純顯示/組織用元件 denylist ───────────────────────────────────────
+#
+# 這些元件不參與計算邏輯（顏色樣本、預覽、面板、中繼、註解、群組），
+# 出現在「主要元件」列舉裡對 AI 理解工具用途沒有幫助、甚至誤導
+# （例如「主要元件：Colour Swatch、Custom Preview」）。_top_components()
+# 先過濾再取 top N；元件總數的計算不受影響（它們仍是定義的一部分）。
+DISPLAY_ONLY_COMPONENTS: frozenset = frozenset(
+    {
+        "Colour Swatch",
+        "Custom Preview",
+        "Preview",
+        "Panel",
+        "Relay",
+        "Scribble",
+        "Group",
+    }
+)
+
 
 def _get(candidate: Optional[dict], key: str, default: Any = None) -> Any:
     if not candidate:
@@ -52,13 +70,26 @@ def _get(candidate: Optional[dict], key: str, default: Any = None) -> Any:
 
 
 def _feeds_phrase(feeds: list, component_key: str, slot_key: str) -> str:
-    """把 feeds/fed_by 列表（最多前 3 筆）組成「餵給/由 X 的 Y」風格片語清單。"""
-    items = feeds[:_MAX_FEEDS_LISTED]
+    """把 feeds/fed_by 列表組成「餵給/由 X 的 Y」風格片語清單（最多 3 筆）。
+
+    - comp == slot 時只 render 元件名：滑桿餵給同名中繼參數是 GH 常態，
+      「Radius／Radius」的斜線重複只是雜訊，寫「Radius」就夠了。
+    - 重複的 (comp, slot) pair 去重：同一物件對同一元件同一腳位接多條線
+      （fan-out）會在 feeds 裡出現多筆一樣的紀錄，列舉一次即可。
+      先去重、再取前 _MAX_FEEDS_LISTED 筆（去重後名額讓給不同的接線）。
+    """
+    seen: set = set()
     parts = []
-    for f in items:
+    for f in feeds:
         comp = f.get(component_key) or "?"
         slot = f.get(slot_key) or "?"
-        parts.append(f"{comp}／{slot}")
+        pair = (comp, slot)
+        if pair in seen:
+            continue
+        seen.add(pair)
+        parts.append(comp if comp == slot else f"{comp}／{slot}")
+        if len(parts) >= _MAX_FEEDS_LISTED:
+            break
     return "、".join(parts)
 
 
@@ -164,7 +195,12 @@ def _detect_libraries(inventory: dict[str, int]) -> list[str]:
 
 
 def _top_components(inventory: dict[str, int], n: int) -> list[str]:
-    ranked = sorted(inventory.items(), key=lambda kv: (-kv[1], kv[0]))
+    """依頻率取前 n 個元件名，先排除 DISPLAY_ONLY_COMPONENTS（純顯示/
+    組織用元件不代表工具的計算用途，見 denylist 註解）。"""
+    ranked = sorted(
+        (kv for kv in inventory.items() if kv[0] not in DISPLAY_ONLY_COMPONENTS),
+        key=lambda kv: (-kv[1], kv[0]),
+    )
     return [name for name, _count in ranked[:n]]
 
 

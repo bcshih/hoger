@@ -68,6 +68,52 @@ def test_describe_input_lists_at_most_first_three_feeds():
     assert "Comp4" not in text
 
 
+def test_describe_input_same_component_and_slot_renders_name_once():
+    # 滑桿餵給同名中繼參數（GH 常態）：comp == slot 時「Radius／Radius」的
+    # 斜線重複只是雜訊，措辭應收斂成「餵給 Radius 的輸入」。
+    spec = InputSpec(param_name="x", kind="number", param_type="Number")
+    candidate = {
+        "feeds": [{"component": "Radius", "input": "Radius"}],
+        "nickname": None,
+        "object_type": "Number Slider",
+    }
+    text = describe_input(spec, candidate)
+    assert "餵給 Radius 的輸入" in text
+    assert "Radius／Radius" not in text
+
+
+def test_describe_input_dedupes_repeated_feed_pairs():
+    # fan-out：同一物件對同一元件同一腳位接多條線，feeds 會出現多筆一樣的
+    # (comp, slot) 紀錄——列舉一次即可，去重後名額讓給不同的接線。
+    spec = InputSpec(param_name="x", kind="number", param_type="Number")
+    candidate = {
+        "feeds": [
+            {"component": "Angle", "input": "Angle"},
+            {"component": "Angle", "input": "Angle"},
+            {"component": "Angle", "input": "Angle"},
+            {"component": "Rotate", "input": "Plane"},
+        ],
+        "nickname": None,
+        "object_type": "Number Slider",
+    }
+    text = describe_input(spec, candidate)
+    assert text.count("Angle") == 1
+    # 去重釋放的名額讓第 4 筆（不同 pair）擠得進前 3 名。
+    assert "Rotate／Plane" in text
+
+
+def test_describe_output_same_component_and_slot_renders_name_once():
+    spec = OutputSpec(param_name="x", kind="geometry")
+    candidate = {
+        "fed_by": [{"component": "Result", "output": "Result"}],
+        "nickname": None,
+        "object_type": "Brep",
+    }
+    text = describe_output(spec, candidate)
+    assert "由 Result 輸出餵入" in text
+    assert "Result／Result" not in text
+
+
 def test_describe_input_boolean_value_context():
     spec = InputSpec(param_name="_run", kind="boolean", param_type="Boolean", default=True)
     candidate = {
@@ -229,6 +275,35 @@ def test_describe_tool_lists_top_frequent_component_names():
     text = describe_tool(m, inventory)
     assert "Division" in text
     assert "Multiplication" in text
+
+
+def test_describe_tool_excludes_display_only_components_from_top_list():
+    # Colour Swatch / Custom Preview / Panel 等純顯示元件即使頻率最高，
+    # 也不該出現在「主要元件」列舉——它們不代表工具的計算用途。
+    m = _manifest()
+    inventory = {
+        "Colour Swatch": 20,
+        "Custom Preview": 15,
+        "Panel": 10,
+        "Move": 3,
+        "Extrude": 2,
+    }
+    text = describe_tool(m, inventory)
+    assert "Colour Swatch" not in text
+    assert "Custom Preview" not in text
+    assert "Panel" not in text
+    assert "Move" in text
+    assert "Extrude" in text
+    # 元件總數仍計入純顯示元件（它們依然是定義的一部分）。
+    assert "50" in text  # 20 + 15 + 10 + 3 + 2
+
+
+def test_describe_tool_all_display_only_inventory_omits_top_list_gracefully():
+    m = _manifest()
+    inventory = {"Colour Swatch": 2, "Panel": 1}
+    text = describe_tool(m, inventory)
+    assert "主要元件" not in text
+    assert "3 個元件" in text
 
 
 def test_describe_tool_no_inventory_still_produces_text():
