@@ -61,6 +61,32 @@
 
 完整操作說明（GH 檔案準備規則、Web UI 三區、MCP/Cursor 接入、Hops 元件用法、疑難排解）請見 **[docs/USAGE.md](docs/USAGE.md)**。
 
+---
+
+## ⚠️ 使用限制與開發者規範 (System Limitations & Preparation Rules)
+
+在使用或編寫供 AI 調用的 Grasshopper 檔案時，請遵守以下 6 大核心限制與規範：
+
+1. **輸出最尾端判定規則 (Tail-End Geometry Rule)**：
+   - 系統掃描候選輸出時，**只認「毫無下游接線」的資料與幾何參數物件**！
+   - 具有運算邏輯的元件（例如 Division、Ladybug 日照分析等）**永遠不會**被自動認作輸出。若要將運算結果暴露給 AI，**最未端必須明確接上一個「幾何/資料參數元件」**（例如拉一個 Geometry、Curve、Brep 或 Panel 放置於最尾端承接）。
+2. **命名強制消毒與分離設計 (`^[A-Za-z0-9_]+$`)**：
+   - 為杜絕 AI 大模型 (LLM) 產生 Function Calling 幻覺，並防範 HTTP/Hops 網路傳輸時的 URL 路由亂碼，所有 `param_name` 會被強制消毒為純英數與底線。
+   - **最佳實務**：請將乾淨的名稱留給變數（如 `building_height_m`），而把豐富的**中文描述、物理意義與數值範圍限制**寫在 `description` 欄位中！AI 會閱讀 `description` 理解語境，並用乾淨的 `param_name` 精準執行。
+3. **文字與數值的分離落地原則 (String vs. Numeric Outputs)**：
+   - **字串 (`string`)**：一律透過 Rhino `AttributeUserText`（屬性使用者文字）附著在輸出的 `.3dm` 幾何物件上。若該次運算完全無幾何產生，系統會自動於原點建立 `Point(0,0,0)` 承載文字，確保結果絕不遺失。
+   - **數值 (`number`/`integer`/`boolean`)**：僅出現在 MCP 回傳的純 JSON `outputs` 字典中，**刻意不寫入 `.3dm` 檔案**。
+4. **型別支援邊界 (Type Support Boundaries)**：
+   - 目前自動解析涵蓋 17 種主流 Grasshopper 型別：Brep、Point、Geometry、Curve、Surface、Data、Number、Integer、Vector、Rectangle、Mesh、Line、Plane、String、Circle、Box、Boolean。
+   - 進階或特殊型別（如 Arc、Colour、Time、Complex、Matrix 等）尚未支援，須在 GH 內部轉為 String、Data 或 Geometry 傳遞。
+5. **Rhino.Compute 預設單位陷阱 (Millimeters Trap)**：
+   - Rhino.Compute 後台無頭運算預設環境為 **毫米 (Millimeters)**。若 GH 檔案是用 **公尺 (Meters)** 建模（例如物理環境分析），幾何尺度會被縮小 1000 倍，且**通常不會報錯**（只會靜默算出一堆 0 或空值）！請注意測試報告區的 `modelunits` 提示或於定義內自行單位轉換。
+6. **雙版本相容與外掛元件限制 (Rhino 7/8 Compatibility & Hops Markers)**：
+   - 系統全面支援 **Rhino 7 與 Rhino 8**。但若使用 Rhino 7，請勿於 `.gh` 中使用 Rhino 8 專屬元件（如 ShrinkWrap）。
+   - 若不走自動群組，改用手動放 Hops 標記元件，**僅限使用官方原生的 Hops 元件**（如 `Get Number`、`Get Brep`）。嚴禁使用第三方外掛（如 Ladybug）自帶的外觀相似 Get 元件，否則無頭執行時會靜默收不到資料且不報錯！
+
+---
+
 ## 測試
 
 ```powershell

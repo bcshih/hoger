@@ -16,3 +16,6 @@ generated/mcp_config/*.snippet.json
 gh_files/
 scratch/
 *.bak
+tools/*.json
+tools/*.gh
+*.gh
