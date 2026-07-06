@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from hoger.api.app import app
+from hoger.core import llm
 from hoger.core.compute_client import ComputeError
 from hoger.ghio.marker import MarkError, MarkResult
 from hoger.ghio.scanner import InputCandidate, OutputCandidate, ScanResult
@@ -594,3 +595,184 @@ def test_convert_enrich_user_supplied_top_level_description_not_overwritten(clie
     assert manifest["description"] == "使用者已填的說明"
     # auto_doc is still generated (separate field, always safe to (re)compute).
     assert manifest["auto_doc"] != ""
+
+
+# ── GET /api/llm-status ──────────────────────────────────────────────
+
+
+def test_llm_status_endpoint_returns_asdict_shape(client, monkeypatch):
+    monkeypatch.setenv("HOGER_LLM_PROVIDER", "gemini-cli")
+    monkeypatch.setattr("hoger.api.routes.llm.shutil.which", lambda name: None)
+
+    resp = client.get("/api/llm-status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["provider"] == "gemini-cli"
+    assert data["available"] is False
+    assert "reason" in data
+    assert "model" in data
+
+
+# ── POST /api/convert: ai_describe (task v3-B) ──────────────────────
+
+
+def _convert_success_setup(monkeypatch, tmp_path):
+    gh_path = tmp_path / "model.gh"
+    gh_path.write_bytes(b"content")
+    mark_result = MarkResult(
+        backup_path=str(tmp_path / "model.20260704_120000.bak"),
+        marked_inputs=["RH_IN:_grid_size"],
+        marked_outputs=["RH_OUT:total"],
+        updated=[],
+    )
+    monkeypatch.setattr("hoger.api.routes.marker.apply_marks", lambda *a, **kw: mark_result)
+    monkeypatch.setattr("hoger.api.routes.compute_client.io_query", lambda p, **kw: _io_sample())
+    monkeypatch.setattr(
+        "hoger.api.routes.scanner.scan_gh",
+        lambda p: _post_convert_enrich_scan_result(),
+    )
+    return gh_path
+
+
+def _convert_body(gh_path, ai_describe=False):
+    return {
+        "gh_path": str(gh_path),
+        "inputs": [{"guid": "11111111-1111-1111-1111-111111111111", "name": "_grid_size"}],
+        "outputs": [{"guid": "22222222-2222-2222-2222-222222222222", "name": "total"}],
+        "ai_describe": ai_describe,
+    }
+
+
+def test_convert_ai_describe_false_does_not_touch_llm(client, monkeypatch, tmp_path):
+    _available(monkeypatch)
+    gh_path = _convert_success_setup(monkeypatch, tmp_path)
+
+    called = []
+    monkeypatch.setattr(
+        "hoger.api.routes.llm.interpret",
+        lambda *a, **kw: called.append(True),
+    )
+
+    resp = client.post("/api/convert", json=_convert_body(gh_path, ai_describe=False))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert called == []
+    assert data.get("ai_describe_used") is False
+    assert "ai_describe_error" not in data or data["ai_describe_error"] is None
+
+
+def test_convert_ai_describe_true_unavailable_sets_error_and_skips_llm(client, monkeypatch, tmp_path):
+    _available(monkeypatch)
+    gh_path = _convert_success_setup(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        "hoger.api.routes.llm.status",
+        lambda: llm.LlmStatus(provider="gemini-cli", model="gemini-cli", available=False, reason="未偵測到 gemini CLI"),
+    )
+    called = []
+    monkeypatch.setattr(
+        "hoger.api.routes.llm.interpret",
+        lambda *a, **kw: called.append(True),
+    )
+
+    resp = client.post("/api/convert", json=_convert_body(gh_path, ai_describe=True))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert called == []
+    assert data["ai_describe_used"] is False
+    assert data["ai_describe_error"] == "未偵測到 gemini CLI"
+    # Rule-based description remains untouched.
+    assert data["manifest"]["description"] != ""
+
+
+def test_convert_ai_describe_true_available_overrides_description(client, monkeypatch, tmp_path):
+    _available(monkeypatch)
+    gh_path = _convert_success_setup(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        "hoger.api.routes.llm.status",
+        lambda: llm.LlmStatus(provider="gemini-cli", model="gemini-cli", available=True),
+    )
+
+    def fake_interpret(digest, param_names, output_names):
+        return llm.Interpretation(
+            tool_purpose="這是 AI 生成的工具用途說明。",
+            param_descriptions={"_grid_size": "AI: 網格大小控制精細度"},
+            output_descriptions={"total": "AI: 輻射總量"},
+            usage_notes="呼叫前請確認幾何單位。",
+        )
+
+    monkeypatch.setattr("hoger.api.routes.llm.interpret", fake_interpret)
+
+    resp = client.post("/api/convert", json=_convert_body(gh_path, ai_describe=True))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ai_describe_used"] is True
+    assert "ai_describe_error" not in data or data["ai_describe_error"] is None
+
+    manifest = data["manifest"]
+    assert manifest["description"] == "這是 AI 生成的工具用途說明。"
+    assert "## AI 解讀" in manifest["auto_doc"]
+    assert "這是 AI 生成的工具用途說明。" in manifest["auto_doc"]
+    assert "呼叫前請確認幾何單位。" in manifest["auto_doc"]
+
+    grid = next(i for i in manifest["inputs"] if i["param_name"] == "_grid_size")
+    assert grid["description"] == "AI: 網格大小控制精細度"
+    total = next(o for o in manifest["outputs"] if o["param_name"] == "total")
+    assert total["description"] == "AI: 輻射總量"
+
+
+def test_convert_ai_describe_param_not_matched_keeps_rule_based(client, monkeypatch, tmp_path):
+    _available(monkeypatch)
+    gh_path = _convert_success_setup(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        "hoger.api.routes.llm.status",
+        lambda: llm.LlmStatus(provider="gemini-cli", model="gemini-cli", available=True),
+    )
+
+    def fake_interpret(digest, param_names, output_names):
+        # AI only describes a param that doesn't exist on the manifest --
+        # _grid_size's rule-based description must be preserved.
+        return llm.Interpretation(
+            tool_purpose="AI purpose",
+            param_descriptions={"nonexistent_param": "should be ignored"},
+            output_descriptions={},
+            usage_notes="",
+        )
+
+    monkeypatch.setattr("hoger.api.routes.llm.interpret", fake_interpret)
+
+    resp = client.post("/api/convert", json=_convert_body(gh_path, ai_describe=True))
+    assert resp.status_code == 200
+    manifest = resp.json()["manifest"]
+    grid = next(i for i in manifest["inputs"] if i["param_name"] == "_grid_size")
+    assert grid["description"] != ""  # rule-based description retained
+
+
+def test_convert_ai_describe_llm_error_falls_back_to_rule_based(client, monkeypatch, tmp_path, caplog):
+    _available(monkeypatch)
+    gh_path = _convert_success_setup(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        "hoger.api.routes.llm.status",
+        lambda: llm.LlmStatus(provider="gemini-cli", model="gemini-cli", available=True),
+    )
+
+    def raise_llm_error(digest, param_names, output_names):
+        raise llm.LlmError("gemini CLI 逾時（120s）")
+
+    monkeypatch.setattr("hoger.api.routes.llm.interpret", raise_llm_error)
+
+    with caplog.at_level("WARNING"):
+        resp = client.post("/api/convert", json=_convert_body(gh_path, ai_describe=True))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ai_describe_used"] is False
+    assert "gemini CLI 逾時" in data["ai_describe_error"]
+
+    manifest = data["manifest"]
+    # Rule-based enrichment must have run normally.
+    assert manifest["description"] != ""
+    assert manifest["auto_doc"] != ""
+    assert "## AI 解讀" not in manifest["auto_doc"]

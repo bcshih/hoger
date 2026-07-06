@@ -23,6 +23,7 @@ import dataclasses
 import logging
 import re
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ValidationError
@@ -30,9 +31,15 @@ from starlette.concurrency import run_in_threadpool
 
 from hoger import config
 from hoger.config import GH_FILES_DIR, HOGER_PORT, ROOT, TOOLS_DIR
-from hoger.core import compute_client, executor
+from hoger.core import compute_client, executor, llm
 from hoger.core.compute_client import ComputeError
-from hoger.core.describe import build_auto_doc, describe_input, describe_output, describe_tool
+from hoger.core.describe import (
+    build_auto_doc,
+    build_graph_digest,
+    describe_input,
+    describe_output,
+    describe_tool,
+)
 from hoger.core.manifest import ToolManifest, manifest_from_io, to_mcp_tool
 from hoger.ghio import loader, marker, scanner
 from hoger.ghio.marker import MarkError
@@ -67,6 +74,7 @@ class ConvertBody(BaseModel):
     gh_path: str
     inputs: list[MarkEntry] = []
     outputs: list[MarkEntry] = []
+    ai_describe: bool = False
 
 
 # ── health ───────────────────────────────────────────────────────────
@@ -75,6 +83,14 @@ class ConvertBody(BaseModel):
 @router.get("/health")
 def get_health():
     return {"hoger": True, "compute": compute_client.health()}
+
+
+# ── llm-status ───────────────────────────────────────────────────────
+
+
+@router.get("/llm-status")
+def get_llm_status():
+    return dataclasses.asdict(llm.status())
 
 
 # ── import ───────────────────────────────────────────────────────────
@@ -114,12 +130,24 @@ def _enrich_manifest_with_scan(manifest: ToolManifest, gh_path: str) -> ToolMani
       describe_input()/describe_output() 生成的文字。
     - manifest.auto_doc 一律（重新）生成——這是獨立欄位，永遠可以安全地
       重算，不涉及「覆寫使用者輸入」的疑慮。
+
+    薄封裝 _enrich_manifest_with_scan_and_dict()（只取第一個回傳值），
+    保留給既有呼叫端（/api/import）與既有測試套件用，避免改動它們的
+    介面。/api/convert 的 ai_describe 路徑改呼叫下面那個版本，重用同一次
+    掃描的 scan_dict 做 digest，不必為了 AI 解讀再多掃一次可能很大的檔案。
     """
+    manifest, _scan_dict = _enrich_manifest_with_scan_and_dict(manifest, gh_path)
+    return manifest
+
+
+def _enrich_manifest_with_scan_and_dict(
+    manifest: ToolManifest, gh_path: str
+) -> tuple[ToolManifest, Optional[dict]]:
     try:
         scan_result = scanner.scan_gh(gh_path)
     except Exception as exc:  # noqa: BLE001 - best-effort enrichment, never break the caller
         logger.warning("hoger.routes: 轉換後 scan_gh 失敗，略過自動描述: %s", exc)
-        return manifest
+        return manifest, None
 
     scan_dict = dataclasses.asdict(scan_result)
     input_index = _candidate_index_by_mark(scan_result.inputs)
@@ -142,7 +170,7 @@ def _enrich_manifest_with_scan(manifest: ToolManifest, gh_path: str) -> ToolMani
 
     manifest.auto_doc = build_auto_doc(manifest, scan_dict)
 
-    return manifest
+    return manifest, scan_dict
 
 
 def _import_from_gh_path(gh_path: str) -> ToolManifest:
@@ -384,6 +412,54 @@ async def scan_gh_file(request: Request):
     return await run_in_threadpool(_scan_by_gh_path, body.gh_path)
 
 
+# ── convert: AI 深度解讀（task v3-B） ───────────────────────────────
+
+
+def _apply_ai_describe(manifest: ToolManifest, scan_dict: Optional[dict]) -> Optional[str]:
+    """勾選「AI 深度解讀」時，用 llm.interpret() 覆蓋規則式描述。
+
+    回傳值：None 表示成功套用；非 None 字串是 ai_describe_error 訊息
+    （provider 不可用的 reason，或 LlmError 的訊息）——呼叫端據此決定
+    ai_describe_used 為 True/False，但無論哪種情況，manifest 上已由
+    _enrich_manifest_with_scan 填好的規則式內容都原封不動保留（本函式
+    只在成功時「疊加覆蓋」，從不刪除既有內容）。
+    """
+    llm_status = llm.status()
+    if not llm_status.available:
+        return llm_status.reason
+
+    param_names = [spec.param_name for spec in manifest.inputs]
+    output_names = [spec.param_name for spec in manifest.outputs]
+
+    try:
+        interpretation = llm.interpret(
+            build_graph_digest(manifest, scan_dict), param_names, output_names
+        )
+    except llm.LlmError as exc:
+        logger.warning("hoger.routes: AI 深度解讀失敗，fallback 至規則式描述: %s", exc)
+        return str(exc)
+
+    manifest.description = interpretation.tool_purpose
+
+    for spec in manifest.inputs:
+        override = interpretation.param_descriptions.get(spec.param_name)
+        if override:
+            spec.description = override
+
+    for spec in manifest.outputs:
+        override = interpretation.output_descriptions.get(spec.param_name)
+        if override:
+            spec.description = override
+
+    ai_section = ["## AI 解讀", "", interpretation.tool_purpose]
+    if interpretation.usage_notes:
+        ai_section.extend(["", interpretation.usage_notes])
+    ai_section.append("")
+    manifest.auto_doc = "\n".join(ai_section) + "\n" + manifest.auto_doc
+
+    return None
+
+
 # ── convert ──────────────────────────────────────────────────────────
 
 
@@ -424,15 +500,32 @@ def _convert(body: ConvertBody) -> dict:
         ) from exc
 
     manifest = manifest_from_io(body.gh_path, io_response)
-    manifest = _enrich_manifest_with_scan(manifest, body.gh_path)
+    manifest, scan_dict = _enrich_manifest_with_scan_and_dict(manifest, body.gh_path)
 
-    return {
+    ai_describe_used = False
+    ai_describe_error = None
+    if body.ai_describe:
+        # 重用規則式 enrich 剛做的那次掃描結果（scan_dict）做 digest，不必
+        # 為了 AI 解讀再多掃一次可能很大的檔案；scan_dict 為 None（enrich
+        # 本身掃描失敗）時 build_graph_digest 對 None 有防禦，digest 只是
+        # 少了結構事實，不影響是否呼叫 LLM 的判斷（那由 llm.status() 決定）。
+        ai_error = _apply_ai_describe(manifest, scan_dict)
+        if ai_error is None:
+            ai_describe_used = True
+        else:
+            ai_describe_error = ai_error
+
+    response = {
         "manifest": manifest.model_dump(),
         "backup_path": mark_result.backup_path,
         "marked_inputs": mark_result.marked_inputs,
         "marked_outputs": mark_result.marked_outputs,
         "updated": mark_result.updated,
+        "ai_describe_used": ai_describe_used,
     }
+    if ai_describe_error is not None:
+        response["ai_describe_error"] = ai_describe_error
+    return response
 
 
 @router.post("/convert")

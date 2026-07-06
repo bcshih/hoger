@@ -62,6 +62,10 @@ const STATE = {
   scanReimportBusy: false, // 「重新解析」（/api/import）進行中
   inputRows: [], // [{guid, checked, name, candidate}]
   outputRows: [],
+
+  // AI 深度解讀（task v3-B）狀態
+  aiDescribeChecked: false, // 使用者是否勾選「AI 深度解讀」
+  llmStatus: null, // /api/llm-status 回應：{provider, model, available, reason}
 };
 
 let root = null;
@@ -85,6 +89,8 @@ export function init(container) {
   STATE.scanReimportBusy = false;
   STATE.inputRows = [];
   STATE.outputRows = [];
+  STATE.aiDescribeChecked = false;
+  STATE.llmStatus = null;
   render();
 }
 
@@ -443,9 +449,26 @@ function onScanSuccess(scanData, fileLabel) {
     candidate: cand,
   }));
 
+  STATE.aiDescribeChecked = false;
+  STATE.llmStatus = null;
   STATE.stage = "scan";
   render();
   toast("掃描完成，請勾選並命名要標記的參數", "success");
+  fetchLlmStatus();
+}
+
+async function fetchLlmStatus() {
+  try {
+    const status = await api("/api/llm-status");
+    STATE.llmStatus = status;
+  } catch (err) {
+    // 查詢失敗（極少數情況，如後端剛好重啟）：視同不可用，checkbox 停用。
+    STATE.llmStatus = { available: false, reason: "無法查詢 AI 解讀狀態", provider: "", model: "" };
+  }
+  // 僅在仍處於 scan 階段時重繪，避免使用者已離開這個畫面後的過期更新。
+  if (STATE.stage === "scan" && !STATE.scanConvertDown) {
+    render();
+  }
 }
 
 function onScanError(err) {
@@ -459,6 +482,52 @@ function onScanError(err) {
     render();
   }
   toast(message, "error");
+}
+
+// ── AI 深度解讀選項（task v3-B） ────────────────────────────────────
+//
+// 掃描勾選階段底部（開始轉換按鈕上方）的選項列：checkbox 讓使用者選擇
+// 是否把 GH 結構摘要送給 LLM 生成語意描述。可用性取決於 /api/llm-status
+// （進入 scan 階段時 fetch，見 fetchLlmStatus），查詢完成前顯示載入中、
+// 不可用時停用並顯示原因。
+
+function renderAiDescribeOption() {
+  const status = STATE.llmStatus;
+
+  if (!status) {
+    return `
+      <div class="ai-describe-option">
+        <label class="ai-describe-label ai-describe-label-loading">
+          <input type="checkbox" disabled />
+          <span>AI 深度解讀（查詢可用性中……）</span>
+        </label>
+      </div>
+    `;
+  }
+
+  if (!status.available) {
+    return `
+      <div class="ai-describe-option">
+        <label class="ai-describe-label ai-describe-label-disabled">
+          <input type="checkbox" disabled />
+          <span>AI 深度解讀（將 GH 結構摘要送給 LLM 生成語意描述）</span>
+        </label>
+        <p class="ai-describe-hint ai-describe-hint-unavailable">${escapeHtml(status.reason || "目前不可用")}</p>
+      </div>
+    `;
+  }
+
+  const providerNote = `${escapeHtml(status.provider)}${status.model ? " / " + escapeHtml(status.model) : ""}`;
+
+  return `
+    <div class="ai-describe-option">
+      <label class="ai-describe-label">
+        <input type="checkbox" id="ai-describe-checkbox" ${STATE.aiDescribeChecked ? "checked" : ""} />
+        <span>AI 深度解讀（將 GH 結構摘要送給 LLM 生成語意描述）</span>
+      </label>
+      <p class="ai-describe-hint">目前設定：${providerNote}</p>
+    </div>
+  `;
 }
 
 // ── stage 2: scan（掃描勾選） ────────────────────────────────────────
@@ -495,7 +564,7 @@ function renderScanStage() {
     ? `
       <div class="scan-convert-busy" role="status">
         <div class="dropzone-spinner" aria-hidden="true"></div>
-        <p>正在標記檔案……已自動備份原檔</p>
+        <p>正在標記檔案……已自動備份原檔${STATE.aiDescribeChecked ? "……AI 解讀中" : ""}</p>
       </div>
     `
     : "";
@@ -552,6 +621,8 @@ function renderScanStage() {
       </div>
 
       ${busyOverlay}
+
+      ${renderAiDescribeOption()}
 
       <div class="review-actions">
         <button type="button" class="btn btn-ghost" id="scan-back-btn" ${STATE.scanBusy ? "disabled" : ""}>返回</button>
@@ -760,6 +831,10 @@ function bindScanStage(stageEl) {
     backToImport();
   });
 
+  stageEl.querySelector("#ai-describe-checkbox")?.addEventListener("change", (ev) => {
+    STATE.aiDescribeChecked = ev.target.checked;
+  });
+
   stageEl.querySelector("#scan-convert-btn")?.addEventListener("click", () => {
     submitConvert();
   });
@@ -792,12 +867,28 @@ function validateScanSelection() {
   return "";
 }
 
+// 掃描物件數超過這個門檻時，勾選 AI 深度解讀會先跳確認（可能消耗大量
+// token）。取消確認不擋轉換本身，只取消勾選繼續走規則式描述。
+const AI_DESCRIBE_TOKEN_WARNING_OBJECT_COUNT = 300;
+
 async function submitConvert() {
   const err = validateScanSelection();
   if (err) {
     toast(err, "error");
     render();
     return;
+  }
+
+  if (STATE.aiDescribeChecked) {
+    const objectCount = STATE.scanData?.scan?.object_count ?? 0;
+    if (objectCount > AI_DESCRIBE_TOKEN_WARNING_OBJECT_COUNT) {
+      const proceed = window.confirm(
+        `此定義較大（${objectCount} 個物件），AI 解讀可能消耗大量 token。仍要啟用嗎？`
+      );
+      if (!proceed) {
+        STATE.aiDescribeChecked = false;
+      }
+    }
   }
 
   STATE.scanBusy = true;
@@ -813,7 +904,12 @@ async function submitConvert() {
   try {
     const result = await api("/api/convert", {
       method: "POST",
-      body: { gh_path: STATE.scanData.gh_path, inputs, outputs },
+      body: {
+        gh_path: STATE.scanData.gh_path,
+        inputs,
+        outputs,
+        ai_describe: STATE.aiDescribeChecked,
+      },
       timeoutMs: convertTimeoutFor(inputs.length + outputs.length),
     });
     STATE.scanBusy = false;
@@ -822,6 +918,9 @@ async function submitConvert() {
     STATE.stage = "review";
     render();
     toast(`轉換成功，已備份原檔至 ${result.backup_path}`, "success");
+    if (result.ai_describe_error) {
+      toast(`AI 解讀失敗，已使用規則式描述：${result.ai_describe_error}`, "error");
+    }
   } catch (caught) {
     STATE.scanBusy = false;
     const message = caught instanceof Error ? caught.message : String(caught);

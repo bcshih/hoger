@@ -348,3 +348,76 @@ def build_auto_doc(manifest: ToolManifest, scan_dict: Optional[dict]) -> str:
         text = truncated + "…"
 
     return text
+
+
+# ── build_graph_digest（task v3-B） ──────────────────────────────────
+
+
+def _digest_feeds_line(feeds: list, component_key: str, slot_key: str) -> str:
+    """跟 _feeds_phrase 不同：完整列出所有 feeds，不截斷、不去重——LLM
+    自己判斷哪些接線有意義，digest 的職責是提供完整事實，不是精簡文字。"""
+    parts = []
+    for f in feeds:
+        comp = f.get(component_key) or "?"
+        slot = f.get(slot_key) or "?"
+        parts.append(comp if comp == slot else f"{comp}/{slot}")
+    return ", ".join(parts)
+
+
+def build_graph_digest(manifest: ToolManifest, scan_dict: Optional[dict]) -> str:
+    """
+    產生給 LLM 的緊湊結構事實 digest：純文字、每行一個事實，不過濾、
+    不截斷——這是 LLM 解讀的原始材料，跟 build_auto_doc（給人看的
+    markdown 文件，會過濾顯示元件、截斷 feeds 列舉）用途不同。
+
+    包含：工具名、元件清單（含次數，全部列出）、每個輸入（名稱/型別/
+    值域/目前值/完整 feeds 清單）、每個輸出（fed_by）、物件總數。
+    """
+    scan_dict = scan_dict or {}
+    inventory = scan_dict.get("component_inventory") or {}
+    object_count = scan_dict.get("object_count")
+
+    input_index = _candidate_index(scan_dict, "inputs")
+    output_index = _candidate_index(scan_dict, "outputs")
+
+    lines: list[str] = []
+    lines.append(f"工具名稱: {manifest.display_name}")
+
+    if object_count is not None:
+        lines.append(f"物件總數: {object_count}")
+
+    if inventory:
+        lines.append("元件清單（名稱: 次數，不過濾）:")
+        for name, count in sorted(inventory.items(), key=lambda kv: (-kv[1], kv[0])):
+            lines.append(f"  - {name}: {count}")
+
+    lines.append(f"輸入參數（共 {len(manifest.inputs)} 個）:")
+    for spec in manifest.inputs:
+        candidate = _find_candidate(spec, input_index)
+        parts = [f"名稱={spec.param_name}", f"型別={spec.kind}"]
+        current_value = _get(candidate, "current_value")
+        if current_value is None and spec.default is not None:
+            current_value = spec.default
+        if current_value is not None:
+            parts.append(f"目前值={current_value}")
+        minimum = _get(candidate, "minimum", spec.minimum)
+        maximum = _get(candidate, "maximum", spec.maximum)
+        if minimum is not None:
+            parts.append(f"最小值={minimum}")
+        if maximum is not None:
+            parts.append(f"最大值={maximum}")
+        feeds = _get(candidate, "feeds", []) or []
+        if feeds:
+            parts.append(f"接到=[{_digest_feeds_line(feeds, 'component', 'input')}]")
+        lines.append("  - " + "; ".join(parts))
+
+    lines.append(f"輸出（共 {len(manifest.outputs)} 個）:")
+    for spec in manifest.outputs:
+        candidate = _find_candidate(spec, output_index)
+        parts = [f"名稱={spec.param_name}", f"型別={spec.kind}"]
+        fed_by = _get(candidate, "fed_by", []) or []
+        if fed_by:
+            parts.append(f"來自=[{_digest_feeds_line(fed_by, 'component', 'output')}]")
+        lines.append("  - " + "; ".join(parts))
+
+    return "\n".join(lines)

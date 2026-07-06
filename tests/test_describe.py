@@ -15,6 +15,7 @@ from __future__ import annotations
 from hoger.core.describe import (
     KNOWN_LIBRARIES,
     build_auto_doc,
+    build_graph_digest,
     describe_input,
     describe_output,
     describe_tool,
@@ -454,3 +455,135 @@ def test_known_libraries_has_expected_entries():
     assert "HB " in prefixes
     assert any("Karamba" in p for p in prefixes)
     assert any("Galapagos" in p for p in prefixes)
+
+
+# ── build_graph_digest（task v3-B） ─────────────────────────────────
+#
+# 給 LLM 的緊湊結構事實：工具名/元件清單（含次數，不過濾）/每個輸入
+# （名稱/型別/值域/目前值/feeds 完整清單不截斷）/每個輸出（fed_by）/
+# 物件總數。純文字、每行一個事實。
+
+
+def _digest_scan_dict():
+    return {
+        "inputs": [
+            {
+                "instance_guid": "g1",
+                "object_type": "Number Slider",
+                "nickname": "RH_IN:_grid_size",
+                "current_value": "3.0",
+                "minimum": 0.0,
+                "maximum": 10.0,
+                "feeds": [
+                    {"component": "LB Sensor Grid", "input": "_grid_size"},
+                    {"component": "LB Sensor Grid 2", "input": "_grid_size"},
+                    {"component": "LB Sensor Grid 3", "input": "_grid_size"},
+                    {"component": "LB Sensor Grid 4", "input": "_grid_size"},
+                ],
+                "existing_mark": "RH_IN:_grid_size",
+            }
+        ],
+        "outputs": [
+            {
+                "instance_guid": "g2",
+                "object_type": "Panel",
+                "nickname": "RH_OUT:report",
+                "fed_by": [{"component": "LB UTCI Comfort", "output": "report"}],
+                "existing_mark": "RH_OUT:report",
+            }
+        ],
+        "already_marked_count": 2,
+        "object_count": 42,
+        "component_inventory": {
+            "LB Sensor Grid": 1,
+            "LB UTCI Comfort": 1,
+            "Colour Swatch": 5,
+        },
+    }
+
+
+def _digest_manifest():
+    return _manifest(
+        display_name="Radiation Study",
+        inputs=[
+            InputSpec(
+                param_name="_grid_size",
+                compute_name="RH_IN:_grid_size",
+                kind="number",
+                param_type="Number",
+                default=3.0,
+                minimum=0.0,
+                maximum=10.0,
+            ),
+        ],
+        outputs=[
+            OutputSpec(param_name="report", compute_name="RH_OUT:report", kind="string"),
+        ],
+    )
+
+
+def test_build_graph_digest_contains_tool_name():
+    text = build_graph_digest(_digest_manifest(), _digest_scan_dict())
+    assert "Radiation Study" in text
+
+
+def test_build_graph_digest_contains_object_count():
+    text = build_graph_digest(_digest_manifest(), _digest_scan_dict())
+    assert "42" in text
+
+
+def test_build_graph_digest_lists_all_components_unfiltered():
+    # 不過濾顯示元件——LLM 自己判斷，Colour Swatch 這種在 describe.py
+    # 規則式路徑會被排除的元件，在 digest 裡必須出現。
+    text = build_graph_digest(_digest_manifest(), _digest_scan_dict())
+    assert "Colour Swatch" in text
+    assert "5" in text  # 出現次數
+    assert "LB Sensor Grid" in text
+    assert "LB UTCI Comfort" in text
+
+
+def test_build_graph_digest_input_includes_type_range_current_value():
+    text = build_graph_digest(_digest_manifest(), _digest_scan_dict())
+    assert "_grid_size" in text
+    assert "number" in text
+    assert "3.0" in text or "3" in text
+    assert "0.0" in text or "0" in text
+    assert "10.0" in text or "10" in text
+
+
+def test_build_graph_digest_feeds_not_truncated():
+    # describe.py 的 _feeds_phrase 只列前 3 筆——digest 不截斷，全部要在。
+    text = build_graph_digest(_digest_manifest(), _digest_scan_dict())
+    assert "LB Sensor Grid" in text
+    assert "LB Sensor Grid 2" in text
+    assert "LB Sensor Grid 3" in text
+    assert "LB Sensor Grid 4" in text
+
+
+def test_build_graph_digest_output_includes_fed_by():
+    text = build_graph_digest(_digest_manifest(), _digest_scan_dict())
+    assert "report" in text
+    assert "LB UTCI Comfort" in text
+
+
+def test_build_graph_digest_no_scan_dict_still_produces_text():
+    m = _manifest(
+        inputs=[InputSpec(param_name="a", kind="number", param_type="Number")],
+        outputs=[OutputSpec(param_name="b", kind="string")],
+    )
+    text = build_graph_digest(m, None)
+    assert text
+    assert "a" in text
+    assert "b" in text
+
+
+def test_build_graph_digest_one_fact_per_line():
+    text = build_graph_digest(_digest_manifest(), _digest_scan_dict())
+    lines = text.split("\n")
+    assert len(lines) > 3  # 多行事實，不是單一大段落
+
+
+def test_build_graph_digest_is_deterministic():
+    m = _digest_manifest()
+    scan = _digest_scan_dict()
+    assert build_graph_digest(m, scan) == build_graph_digest(m, scan)

@@ -793,6 +793,51 @@ body {
   opacity: 0.55;
 }
 
+.ai-describe-option {
+  margin: 4px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+}
+
+.ai-describe-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ink-0);
+  cursor: pointer;
+}
+
+.ai-describe-label input[type="checkbox"] {
+  accent-color: var(--signal-blue);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.ai-describe-label-loading,
+.ai-describe-label-disabled {
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.ai-describe-label-loading input,
+.ai-describe-label-disabled input {
+  cursor: default;
+}
+
+.ai-describe-hint {
+  margin: 6px 0 0 25px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.ai-describe-hint-unavailable {
+  color: var(--signal-amber);
+}
+
 .scan-feeds-cell {
   max-width: 260px;
   font-size: 12px;
