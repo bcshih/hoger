@@ -439,7 +439,10 @@ def _apply_ai_describe(manifest: ToolManifest, scan_dict: Optional[dict]) -> Opt
         logger.warning("hoger.routes: AI 深度解讀失敗，fallback 至規則式描述: %s", exc)
         return str(exc)
 
-    manifest.description = interpretation.tool_purpose
+    # 空值 guard 與 per-param 迴圈一致：LLM 回空 tool_purpose 時保留
+    # 規則式工具描述，不得清空（_extract_json 允許缺欄位補空字串）。
+    if interpretation.tool_purpose:
+        manifest.description = interpretation.tool_purpose
 
     for spec in manifest.inputs:
         override = interpretation.param_descriptions.get(spec.param_name)
@@ -451,11 +454,14 @@ def _apply_ai_describe(manifest: ToolManifest, scan_dict: Optional[dict]) -> Opt
         if override:
             spec.description = override
 
-    ai_section = ["## AI 解讀", "", interpretation.tool_purpose]
-    if interpretation.usage_notes:
-        ai_section.extend(["", interpretation.usage_notes])
-    ai_section.append("")
-    manifest.auto_doc = "\n".join(ai_section) + "\n" + manifest.auto_doc
+    if interpretation.tool_purpose or interpretation.usage_notes:
+        ai_section = ["## AI 解讀", ""]
+        if interpretation.tool_purpose:
+            ai_section.append(interpretation.tool_purpose)
+        if interpretation.usage_notes:
+            ai_section.extend(["", interpretation.usage_notes])
+        ai_section.append("")
+        manifest.auto_doc = "\n".join(ai_section) + "\n" + manifest.auto_doc
 
     return None
 

@@ -275,11 +275,23 @@ def interpret(digest: str, param_names: list[str], output_names: list[str]) -> I
 
 # ── provider: gemini-cli ─────────────────────────────────────────────
 
+# Windows CreateProcess 的命令列總長上限約 32K 字元；prompt（含未截斷的
+# digest）以單一 argv 元素傳給 gemini CLI，超過就會在 OS 層炸出難懂的
+# OSError。留 2K 餘裕給執行檔路徑與旗標，超標時給可行動的訊息。
+_GEMINI_CLI_MAX_PROMPT_CHARS = 30000
+
 
 def _call_gemini_cli(prompt: str) -> str:
     gemini_path = shutil.which("gemini")
     if not gemini_path:
         raise LlmError("未偵測到 gemini CLI（shutil.which('gemini') 找不到）")
+
+    if len(prompt) > _GEMINI_CLI_MAX_PROMPT_CHARS:
+        raise LlmError(
+            f"digest 過大（{len(prompt)} 字元），超過 gemini CLI 命令列長度上限"
+            f"（{_GEMINI_CLI_MAX_PROMPT_CHARS}）——請改用 gemini-api 等 API provider"
+            "（設定 HOGER_LLM_PROVIDER）"
+        )
 
     try:
         result = subprocess.run(
@@ -302,6 +314,21 @@ def _call_gemini_cli(prompt: str) -> str:
 # ── provider: gemini-api ─────────────────────────────────────────────
 
 
+def _redact(text: str, secret: str) -> str:
+    """把 text 中出現的 secret 全部換成 "***"（secret 為空時原樣回傳）。
+
+    用途：requests 的 ConnectionError/Timeout 例外訊息會包含完整請求 URL；
+    Gemini API 的 key 走 URL query 參數（?key=...，Google API 設計如此），
+    直接把 str(exc) 放進 LlmError 會讓 key 流進 log、HTTP 回應的
+    ai_describe_error、以及畫面 toast。其他 provider（anthropic/openai/
+    ollama）的憑證走 HTTP header，requests 例外的字串表示不含 header，
+    無此洩漏面——只有 gemini-api 需要 redact。
+    """
+    if not secret:
+        return text
+    return text.replace(secret, "***")
+
+
 def _call_gemini_api(prompt: str) -> str:
     api_key = _gemini_api_key()
     if not api_key:
@@ -317,7 +344,8 @@ def _call_gemini_api(prompt: str) -> str:
     try:
         resp = requests.post(url, json=payload, timeout=_timeout())
     except requests.exceptions.RequestException as exc:
-        raise LlmError(f"Gemini API 連線失敗：{exc}") from exc
+        # str(exc) 會含完整 URL（含 ?key=...）——見 _redact docstring
+        raise LlmError(f"Gemini API 連線失敗：{_redact(str(exc), api_key)}") from exc
 
     if resp.status_code >= 400:
         raise LlmError(f"Gemini API HTTP {resp.status_code}: {resp.text[:500]}")

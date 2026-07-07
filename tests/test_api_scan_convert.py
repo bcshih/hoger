@@ -750,6 +750,37 @@ def test_convert_ai_describe_param_not_matched_keeps_rule_based(client, monkeypa
     assert grid["description"] != ""  # rule-based description retained
 
 
+def test_convert_ai_describe_empty_tool_purpose_keeps_rule_based_description(
+    client, monkeypatch, tmp_path
+):
+    """LLM 成功回應但 tool_purpose 為空（_extract_json 允許缺欄位補空）——
+    不得把規則式工具描述清成空字串（與 per-param 的空值 guard 一致）。"""
+    _available(monkeypatch)
+    gh_path = _convert_success_setup(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        "hoger.api.routes.llm.status",
+        lambda: llm.LlmStatus(provider="gemini-cli", model="gemini-cli", available=True),
+    )
+
+    def fake_interpret(digest, param_names, output_names):
+        return llm.Interpretation(
+            tool_purpose="",
+            param_descriptions={},
+            output_descriptions={},
+            usage_notes="",
+        )
+
+    monkeypatch.setattr("hoger.api.routes.llm.interpret", fake_interpret)
+
+    resp = client.post("/api/convert", json=_convert_body(gh_path, ai_describe=True))
+    assert resp.status_code == 200
+    manifest = resp.json()["manifest"]
+    assert manifest["description"] != ""  # 規則式工具描述保留，未被清空
+    # tool_purpose 與 usage_notes 皆空 -> auto_doc 不得插入空殼「## AI 解讀」節
+    assert "## AI 解讀" not in manifest["auto_doc"]
+
+
 def test_convert_ai_describe_llm_error_falls_back_to_rule_based(client, monkeypatch, tmp_path, caplog):
     _available(monkeypatch)
     gh_path = _convert_success_setup(monkeypatch, tmp_path)

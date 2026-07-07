@@ -380,6 +380,46 @@ def test_interpret_gemini_api_no_key_raises_llm_error(monkeypatch):
         llm.interpret("digest", [], [])
 
 
+def test_interpret_gemini_api_connection_error_redacts_api_key(monkeypatch):
+    """
+    requests 的 ConnectionError/Timeout 例外訊息會含完整請求 URL；
+    Gemini API 的 key 走 URL query 參數（?key=...），未遮蔽的話 key 會
+    流進 log、HTTP 回應的 ai_describe_error、畫面 toast——安全回歸測試。
+    """
+    monkeypatch.setenv("HOGER_LLM_PROVIDER", "gemini-api")
+    monkeypatch.setenv("HOGER_GEMINI_API_KEY", "SECRET123")
+
+    def fake_post(url, **kwargs):
+        # 模擬 requests 實際行為：例外訊息包含完整 URL（含 key）
+        raise requests.exceptions.ConnectionError(
+            "HTTPSConnectionPool(host='generativelanguage.googleapis.com', port=443): "
+            "Max retries exceeded with url: /v1beta/models/x:generateContent?key=SECRET123"
+        )
+
+    monkeypatch.setattr(llm.requests, "post", fake_post)
+    with pytest.raises(llm.LlmError) as exc_info:
+        llm.interpret("digest", [], [])
+
+    message = str(exc_info.value)
+    assert "SECRET123" not in message
+    assert "***" in message
+
+
+def test_interpret_gemini_cli_prompt_too_long_raises_actionable_llm_error(monkeypatch):
+    """Windows CreateProcess 命令列上限約 32K；超標要在邊界給可行動訊息，
+    而不是讓 OS 層炸出難懂的 OSError。"""
+    monkeypatch.setenv("HOGER_LLM_PROVIDER", "gemini-cli")
+    monkeypatch.setattr(llm.shutil, "which", lambda name: r"C:\tools\gemini.exe")
+
+    def fail_run(*a, **kw):
+        raise AssertionError("subprocess.run should not be called for oversized prompt")
+
+    monkeypatch.setattr(llm.subprocess, "run", fail_run)
+
+    with pytest.raises(llm.LlmError, match="gemini-api"):
+        llm.interpret("x" * 40000, [], [])
+
+
 # ── interpret(): anthropic provider ─────────────────────────────────
 
 
