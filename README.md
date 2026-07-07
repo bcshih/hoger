@@ -52,7 +52,7 @@
 ## 快速開始
 
 1. **啟動 Rhino.Compute**（compute.geometry，監聽 `localhost:5000`）——通常是開啟 Rhino 並啟動 compute.geometry.exe，或既有的 Rhino.Compute 服務。
-2. **啟動 HOGER**：雙擊 `start_hoger.bat`（會自動開伺服器視窗並開瀏覽器），或手動執行：
+2. **啟動 HOGER**：雙擊 `start_hoger.bat`（會自動開伺服器視窗並開瀏覽器），或使用 **`start_hoger_with_gemini.bat`**（可一鍵綁定 Google Gemini API 金鑰與模型型號進行 AI 深度解讀）；也可手動執行：
    ```powershell
    .\run_hoger.ps1
    ```
