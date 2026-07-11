@@ -205,6 +205,19 @@ body {
   background: var(--ink-3);
 }
 
+.lang-toggle {
+  cursor: pointer;
+}
+
+.lang-toggle:hover {
+  border-color: var(--line-soft);
+  background: var(--bg-2);
+}
+
+.lang-toggle .lamp-text {
+  font-weight: 700;
+}
+
 /* ── compute-down banner ──────────────────────────────────────────── */
 
 .banner {

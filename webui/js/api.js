@@ -11,6 +11,8 @@
 // toast(message, type)：右下角通知，type 為 error/success/info，
 // 數秒後自動淡出移除。
 
+import { t } from "./i18n.js";
+
 const DEFAULT_TIMEOUT_MS = 15000;
 
 export async function api(path, options = {}) {
@@ -39,9 +41,9 @@ export async function api(path, options = {}) {
     });
   } catch (err) {
     if (err.name === "AbortError") {
-      throw new Error(`請求逾時：${path}`);
+      throw new Error(t("api.timeout", { path }));
     }
-    throw new Error(`無法連線到 HOGER 服務，請確認後端是否已啟動（${path}）`);
+    throw new Error(t("api.unreachable", { path }));
   } finally {
     clearTimeout(timer);
   }

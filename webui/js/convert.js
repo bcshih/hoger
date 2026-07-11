@@ -18,10 +18,13 @@
 // 單向流動，送出時才從物件組 payload。
 
 import { api, toast } from "./api.js";
-import { escapeHtml, kindBadge, validateId, bindEditableCells, ID_HINT } from "./ui-common.js";
+import { escapeHtml, kindBadge, validateId, bindEditableCells, idHint } from "./ui-common.js";
+import { t } from "./i18n.js";
 
 const NAME_PATTERN = /^[A-Za-z0-9_]+$/;
-const NAME_HINT = "僅限英數字與底線（^[A-Za-z0-9_]+$）。";
+function nameHint() {
+  return t("convert.nameHint");
+}
 
 // api.js 預設逾時只有 15 秒——大型 GH 檔案（數千物件）的掃描/標記/解析
 // 遠超過這個值，必須逐呼叫放寬：
@@ -94,14 +97,21 @@ export function init(container) {
   render();
 }
 
+// 語言切換時由 app.js 呼叫：只重繪目前畫面（讀現有 STATE，不重置），
+// 不是 init()——init() 會把整個轉換流程重置回第一步，語言切換不該有
+// 這種副作用。
+export function rerender() {
+  if (root) render();
+}
+
 // ── render ───────────────────────────────────────────────────────────
 
 function render() {
   root.innerHTML = `
     <div class="view-head">
       <span class="view-eyebrow">01 · Import &amp; Convert</span>
-      <h2 class="view-title">轉換</h2>
-      <p class="view-desc">將 Grasshopper 檔案匯入並轉換為可執行的工具定義。</p>
+      <h2 class="view-title">${t("header.tab.convert")}</h2>
+      <p class="view-desc">${t("convert.viewDesc")}</p>
     </div>
     <div id="convert-stage"></div>
   `;
@@ -127,29 +137,27 @@ function render() {
 
 function renderImportStage() {
   const scanModeCards = `
-    <div class="scan-mode-cards" role="tablist" aria-label="轉換方式">
+    <div class="scan-mode-cards" role="tablist" aria-label="${t("convert.modeTablistAria")}">
       <button type="button" class="scan-mode-card ${STATE.scanMode === "auto" ? "active" : ""}" data-scan-mode="auto">
-        <span class="scan-mode-card-tag">推薦</span>
-        <span class="scan-mode-card-title">自動轉換</span>
-        <span class="scan-mode-card-desc">任意 .gh 檔案皆可。系統會掃描候選輸入／輸出，
-          由你勾選命名後自動加上 RH_IN / RH_OUT 標記（原檔自動備份）。</span>
+        <span class="scan-mode-card-tag">${t("convert.tagRecommended")}</span>
+        <span class="scan-mode-card-title">${t("convert.autoTitle")}</span>
+        <span class="scan-mode-card-desc">${t("convert.autoDesc")}</span>
       </button>
       <button type="button" class="scan-mode-card ${STATE.scanMode === "direct" ? "active" : ""}" data-scan-mode="direct">
-        <span class="scan-mode-card-tag scan-mode-card-tag-alt">進階</span>
-        <span class="scan-mode-card-title">直接解析</span>
-        <span class="scan-mode-card-desc">檔案已包含 RH_IN / RH_OUT（Hops）標記時使用，
-          直接呼叫 Rhino.Compute /io 解析，不經過掃描階段。</span>
+        <span class="scan-mode-card-tag scan-mode-card-tag-alt">${t("convert.tagAdvanced")}</span>
+        <span class="scan-mode-card-title">${t("convert.directTitle")}</span>
+        <span class="scan-mode-card-desc">${t("convert.directDesc")}</span>
       </button>
     </div>
   `;
 
   const modeToggle = `
-    <div class="import-mode-toggle" role="tablist" aria-label="匯入方式">
+    <div class="import-mode-toggle" role="tablist" aria-label="${t("convert.importModeAria")}">
       <button type="button" class="import-mode-btn ${STATE.importMode === "file" ? "active" : ""}" data-mode="file">
-        檔案上傳
+        ${t("convert.uploadFile")}
       </button>
       <button type="button" class="import-mode-btn ${STATE.importMode === "path" ? "active" : ""}" data-mode="path">
-        本機路徑
+        ${t("convert.localPath")}
       </button>
     </div>
   `;
@@ -157,32 +165,32 @@ function renderImportStage() {
   let body;
   if (STATE.busy) {
     const busyText =
-      STATE.scanMode === "auto" ? "掃描中……讀取 GH_IO 候選輸入輸出" : "解析中……透過 Rhino.Compute /io 讀取";
+      STATE.scanMode === "auto" ? t("convert.scanningBusy") : t("convert.parsingBusy");
     body = `
       <div class="dropzone dropzone-busy" id="dropzone">
         <div class="dropzone-spinner" aria-hidden="true"></div>
         <p class="dropzone-title">${busyText}</p>
-        <p class="dropzone-hint">請稍候，這可能需要幾秒鐘</p>
+        <p class="dropzone-hint">${t("convert.pleaseWaitHint")}</p>
       </div>
     `;
   } else if (STATE.importMode === "file") {
     body = `
-      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="拖放或選擇 .gh 檔案">
-        <p class="dropzone-title">將 .gh 檔案拖放到這裡</p>
-        <p class="dropzone-hint">或</p>
-        <button type="button" class="btn btn-primary" id="browse-btn">瀏覽檔案</button>
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="${t("convert.dropzoneAria")}">
+        <p class="dropzone-title">${t("convert.dropzoneTitle")}</p>
+        <p class="dropzone-hint">${t("convert.or")}</p>
+        <button type="button" class="btn btn-primary" id="browse-btn">${t("convert.browseFile")}</button>
         <input type="file" id="file-input" accept=".gh" hidden />
       </div>
     `;
   } else {
     body = `
       <div class="path-import">
-        <label class="field-label" for="gh-path-input">本機絕對路徑（.gh）</label>
+        <label class="field-label" for="gh-path-input">${t("convert.localPathLabel")}</label>
         <div class="path-import-row">
           <input type="text" id="gh-path-input" class="input-text mono" placeholder="C:\\models\\example.gh" />
-          <button type="button" class="btn btn-primary" id="path-submit-btn">${STATE.scanMode === "auto" ? "掃描" : "匯入"}</button>
+          <button type="button" class="btn btn-primary" id="path-submit-btn">${STATE.scanMode === "auto" ? t("convert.scanBtn") : t("convert.importBtn")}</button>
         </div>
-        <p class="field-hint">請輸入伺服器可存取的絕對路徑。</p>
+        <p class="field-hint">${t("convert.pathHint")}</p>
       </div>
     `;
   }
@@ -192,8 +200,8 @@ function renderImportStage() {
       <div class="inline-alert" role="alert">
         <span class="inline-alert-icon" aria-hidden="true">&#9888;</span>
         <div>
-          <strong>Rhino.Compute 未啟動</strong>
-          <p>請先啟動 compute.geometry（localhost:5000）後再重試匯入。</p>
+          <strong>${t("convert.computeDownTitle")}</strong>
+          <p>${t("convert.computeDownDesc")}</p>
         </div>
       </div>
     `
@@ -204,10 +212,8 @@ function renderImportStage() {
       <div class="inline-alert" role="alert">
         <span class="inline-alert-icon" aria-hidden="true">&#9888;</span>
         <div>
-          <strong>掃描功能目前不可用</strong>
-          <p>GH_IO.dll 不可用：需要本機安裝 Rhino 8（含 Grasshopper），
-            或設定環境變數 HOGER_GHIO_DLL 指向 GH_IO.dll 的路徑。
-            若檔案已含 RH_IN / RH_OUT 標記，可改用「直接解析」。</p>
+          <strong>${t("convert.ghioUnavailableTitle")}</strong>
+          <p>${t("convert.ghioUnavailableDesc")}</p>
         </div>
       </div>
     `
@@ -287,7 +293,7 @@ function bindImportStage(stageEl) {
     const submitPath = () => {
       const value = pathInput.value.trim();
       if (!value) {
-        toast("請輸入 .gh 檔案的絕對路徑", "error");
+        toast(t("convert.pathRequired"), "error");
         return;
       }
       submitGhPath(value);
@@ -304,7 +310,7 @@ function bindImportStage(stageEl) {
 
 function submitFile(file) {
   if (!file.name.toLowerCase().endsWith(".gh")) {
-    toast("只支援 .gh 檔案", "error");
+    toast(t("convert.onlyGhFiles"), "error");
     return;
   }
   if (STATE.scanMode === "auto") {
@@ -367,7 +373,7 @@ function onImportSuccess(manifest) {
   STATE.idError = "";
   STATE.stage = "review";
   render();
-  toast("解析成功，請檢視並確認工具定義", "success");
+  toast(t("convert.importSuccessToast"), "success");
 }
 
 function onImportError(err) {
@@ -453,7 +459,7 @@ function onScanSuccess(scanData, fileLabel) {
   STATE.llmStatus = null;
   STATE.stage = "scan";
   render();
-  toast("掃描完成，請勾選並命名要標記的參數", "success");
+  toast(t("convert.scanSuccessToast"), "success");
   fetchLlmStatus();
 }
 
@@ -463,7 +469,7 @@ async function fetchLlmStatus() {
     STATE.llmStatus = status;
   } catch (err) {
     // 查詢失敗（極少數情況，如後端剛好重啟）：視同不可用，checkbox 停用。
-    STATE.llmStatus = { available: false, reason: "無法查詢 AI 解讀狀態", provider: "", model: "" };
+    STATE.llmStatus = { available: false, reason: t("convert.llmStatusQueryFailed"), provider: "", model: "" };
   }
   // 僅在仍處於 scan 階段時重繪，避免使用者已離開這個畫面後的過期更新。
   if (STATE.stage === "scan" && !STATE.scanConvertDown) {
@@ -499,7 +505,7 @@ function renderAiDescribeOption() {
       <div class="ai-describe-option">
         <label class="ai-describe-label ai-describe-label-loading">
           <input type="checkbox" disabled />
-          <span>AI 深度解讀（查詢可用性中……）</span>
+          <span>${t("convert.aiDescribeLoading")}</span>
         </label>
       </div>
     `;
@@ -510,9 +516,9 @@ function renderAiDescribeOption() {
       <div class="ai-describe-option">
         <label class="ai-describe-label ai-describe-label-disabled">
           <input type="checkbox" disabled />
-          <span>AI 深度解讀（將 GH 結構摘要送給 LLM 生成語意描述）</span>
+          <span>${t("convert.aiDescribeLabel")}</span>
         </label>
-        <p class="ai-describe-hint ai-describe-hint-unavailable">${escapeHtml(status.reason || "目前不可用")}</p>
+        <p class="ai-describe-hint ai-describe-hint-unavailable">${escapeHtml(status.reason || t("convert.aiDescribeUnavailableFallback"))}</p>
       </div>
     `;
   }
@@ -523,9 +529,9 @@ function renderAiDescribeOption() {
     <div class="ai-describe-option">
       <label class="ai-describe-label">
         <input type="checkbox" id="ai-describe-checkbox" ${STATE.aiDescribeChecked ? "checked" : ""} />
-        <span>AI 深度解讀（將 GH 結構摘要送給 LLM 生成語意描述）</span>
+        <span>${t("convert.aiDescribeLabel")}</span>
       </label>
-      <p class="ai-describe-hint">目前設定：${providerNote}</p>
+      <p class="ai-describe-hint">${t("convert.aiDescribeCurrentSetting", { provider: providerNote })}</p>
     </div>
   `;
 }
@@ -543,18 +549,18 @@ function renderScanStage() {
 
   const alreadyMarkedNote =
     alreadyMarked > 0
-      ? `<p class="scan-summary-note">偵測到 ${alreadyMarked} 個既有標記，重新標記會更新群組名稱。</p>`
+      ? `<p class="scan-summary-note">${t("convert.alreadyMarkedNote", { n: alreadyMarked })}</p>`
       : "";
 
   const nameUsage = computeNameUsage();
 
   const inputRowsHtml = STATE.inputRows.length
     ? STATE.inputRows.map((row, idx) => renderCandidateRow(row, idx, "input", nameUsage)).join("")
-    : `<tr><td colspan="7" class="cell-empty">未偵測到候選輸入</td></tr>`;
+    : `<tr><td colspan="7" class="cell-empty">${t("convert.noCandidateInputs")}</td></tr>`;
 
   const outputRowsHtml = STATE.outputRows.length
     ? STATE.outputRows.map((row, idx) => renderCandidateRow(row, idx, "output", nameUsage)).join("")
-    : `<tr><td colspan="5" class="cell-empty">未偵測到候選輸出</td></tr>`;
+    : `<tr><td colspan="5" class="cell-empty">${t("convert.noCandidateOutputs")}</td></tr>`;
 
   const checkedInputCount = STATE.inputRows.filter((r) => r.checked).length;
   const checkedOutputCount = STATE.outputRows.filter((r) => r.checked).length;
@@ -564,7 +570,7 @@ function renderScanStage() {
     ? `
       <div class="scan-convert-busy" role="status">
         <div class="dropzone-spinner" aria-hidden="true"></div>
-        <p>正在標記檔案……已自動備份原檔${STATE.aiDescribeChecked ? "……AI 解讀中" : ""}</p>
+        <p>${t("convert.markingBusy")}${STATE.aiDescribeChecked ? t("convert.markingBusyAiSuffix") : ""}</p>
       </div>
     `
     : "";
@@ -575,25 +581,25 @@ function renderScanStage() {
         <div class="scan-summary-row">
           <div>
             <p class="scan-summary-filename mono">${escapeHtml(STATE.scanFileLabel)}</p>
-            <p class="scan-summary-meta">物件總數 ${objectCount} ・ 既有標記 ${alreadyMarked}</p>
+            <p class="scan-summary-meta">${t("convert.scanSummaryMeta", { objectCount, alreadyMarked })}</p>
           </div>
         </div>
         ${alreadyMarkedNote}
       </div>
 
       <div class="table-section">
-        <h3 class="table-section-title">候選輸入 <span class="table-count">${STATE.inputRows.length}</span></h3>
+        <h3 class="table-section-title">${t("convert.candidateInputsTitle")} <span class="table-count">${STATE.inputRows.length}</span></h3>
         <div class="table-scroll">
           <table class="data-table scan-table">
             <thead>
               <tr>
-                <th class="scan-th-check"><span class="sr-only">勾選</span></th>
-                <th>型別</th>
+                <th class="scan-th-check"><span class="sr-only">${t("convert.thCheckSr")}</span></th>
+                <th>${t("common.thType")}</th>
                 <th>Nickname</th>
-                <th>目前值 / 範圍</th>
-                <th>接到</th>
-                <th>參數名</th>
-                <th>既有標記</th>
+                <th>${t("convert.thValueRange")}</th>
+                <th>${t("convert.thFeeds")}</th>
+                <th>${t("convert.thParamName")}</th>
+                <th>${t("convert.thExistingMark")}</th>
               </tr>
             </thead>
             <tbody id="scan-inputs-tbody">${inputRowsHtml}</tbody>
@@ -602,17 +608,17 @@ function renderScanStage() {
       </div>
 
       <div class="table-section">
-        <h3 class="table-section-title">候選輸出 <span class="table-count">${STATE.outputRows.length}</span></h3>
+        <h3 class="table-section-title">${t("convert.candidateOutputsTitle")} <span class="table-count">${STATE.outputRows.length}</span></h3>
         <div class="table-scroll">
           <table class="data-table scan-table">
             <thead>
               <tr>
-                <th class="scan-th-check"><span class="sr-only">勾選</span></th>
-                <th>型別</th>
+                <th class="scan-th-check"><span class="sr-only">${t("convert.thCheckSr")}</span></th>
+                <th>${t("common.thType")}</th>
                 <th>Nickname</th>
-                <th>來自</th>
-                <th>參數名</th>
-                <th>既有標記</th>
+                <th>${t("convert.thFrom")}</th>
+                <th>${t("convert.thParamName")}</th>
+                <th>${t("convert.thExistingMark")}</th>
               </tr>
             </thead>
             <tbody id="scan-outputs-tbody">${outputRowsHtml}</tbody>
@@ -625,10 +631,10 @@ function renderScanStage() {
       ${renderAiDescribeOption()}
 
       <div class="review-actions">
-        <button type="button" class="btn btn-ghost" id="scan-back-btn" ${STATE.scanBusy ? "disabled" : ""}>返回</button>
+        <button type="button" class="btn btn-ghost" id="scan-back-btn" ${STATE.scanBusy ? "disabled" : ""}>${t("common.back")}</button>
         <div class="review-actions-primary scan-actions-primary">
-          <span class="scan-check-summary">將標記 ${checkedInputCount} 個輸入、${checkedOutputCount} 個輸出</span>
-          <button type="button" class="btn btn-primary" id="scan-convert-btn" ${STATE.scanBusy || nothingChecked ? "disabled" : ""}>開始轉換</button>
+          <span class="scan-check-summary">${t("convert.scanCheckSummary", { inputs: checkedInputCount, outputs: checkedOutputCount })}</span>
+          <button type="button" class="btn btn-primary" id="scan-convert-btn" ${STATE.scanBusy || nothingChecked ? "disabled" : ""}>${t("convert.startConvertBtn")}</button>
         </div>
       </div>
     </div>
@@ -641,16 +647,15 @@ function renderScanConvertDownCard() {
       <div class="inline-alert inline-alert-amber" role="alert">
         <span class="inline-alert-icon" aria-hidden="true">&#9888;</span>
         <div>
-          <strong>檔案已標記並備份，Rhino.Compute 目前離線</strong>
-          <p>備份路徑：<span class="mono">${escapeHtml(STATE.scanConvertBackupPath)}</span></p>
-          <p>啟動 compute.geometry（localhost:5000）後，按下方按鈕重新解析已標記的檔案，
-            不需要重新掃描或重新標記。</p>
+          <strong>${t("convert.scanConvertDownTitle")}</strong>
+          <p>${t("convert.backupPathLabel")}<span class="mono">${escapeHtml(STATE.scanConvertBackupPath)}</span></p>
+          <p>${t("convert.scanConvertDownDesc")}</p>
         </div>
       </div>
       <div class="review-actions">
-        <button type="button" class="btn btn-ghost" id="scan-back-btn" ${STATE.scanReimportBusy ? "disabled" : ""}>返回</button>
+        <button type="button" class="btn btn-ghost" id="scan-back-btn" ${STATE.scanReimportBusy ? "disabled" : ""}>${t("common.back")}</button>
         <button type="button" class="btn btn-primary" id="scan-reimport-btn" ${STATE.scanReimportBusy ? "disabled" : ""}>
-          ${STATE.scanReimportBusy ? "重新解析中……" : "重新解析"}
+          ${STATE.scanReimportBusy ? t("convert.reparsing") : t("convert.reparse")}
         </button>
       </div>
     </div>
@@ -716,7 +721,7 @@ function renderCandidateRow(row, idx, kind, nameUsage) {
 
   const nameFieldHtml = `
     <input type="text" class="cell-input mono scan-name-input ${nameInvalid ? "input-invalid" : ""}"
-      data-kind="${kind}" data-idx="${idx}" value="${escapeHtml(row.name)}" placeholder="參數名……" />
+      data-kind="${kind}" data-idx="${idx}" value="${escapeHtml(row.name)}" placeholder="${t("convert.paramNamePlaceholder")}" />
   `;
 
   const checkboxHtml = `
@@ -854,14 +859,14 @@ function backToImport() {
 function validateScanSelection() {
   const checkedRows = [...STATE.inputRows, ...STATE.outputRows].filter((r) => r.checked);
   if (checkedRows.length === 0) {
-    return "請至少勾選一個輸入或輸出";
+    return t("convert.selectAtLeastOne");
   }
   const seen = new Map();
   for (const row of checkedRows) {
     const name = row.name.trim();
-    if (!name) return "請為所有勾選的列填入參數名";
-    if (!NAME_PATTERN.test(name)) return `參數名「${name}」格式不符：${NAME_HINT}`;
-    if (seen.has(name)) return `參數名「${name}」重複，請改為不同名稱`;
+    if (!name) return t("convert.fillAllNames");
+    if (!NAME_PATTERN.test(name)) return t("convert.nameFormatInvalid", { name, hint: nameHint() });
+    if (seen.has(name)) return t("convert.nameDuplicate", { name });
     seen.set(name, true);
   }
   return "";
@@ -882,9 +887,7 @@ async function submitConvert() {
   if (STATE.aiDescribeChecked) {
     const objectCount = STATE.scanData?.scan?.object_count ?? 0;
     if (objectCount > AI_DESCRIBE_TOKEN_WARNING_OBJECT_COUNT) {
-      const proceed = window.confirm(
-        `此定義較大（${objectCount} 個物件），AI 解讀可能消耗大量 token。仍要啟用嗎？`
-      );
+      const proceed = window.confirm(t("convert.aiDescribeConfirm", { n: objectCount }));
       if (!proceed) {
         STATE.aiDescribeChecked = false;
       }
@@ -917,9 +920,9 @@ async function submitConvert() {
     STATE.idError = "";
     STATE.stage = "review";
     render();
-    toast(`轉換成功，已備份原檔至 ${result.backup_path}`, "success");
+    toast(t("convert.convertSuccessToast", { path: result.backup_path }), "success");
     if (result.ai_describe_error) {
-      toast(`AI 解讀失敗，已使用規則式描述：${result.ai_describe_error}`, "error");
+      toast(t("convert.aiDescribeErrorToast", { error: result.ai_describe_error }), "error");
     }
   } catch (caught) {
     STATE.scanBusy = false;
@@ -953,7 +956,7 @@ async function reimportAfterMark() {
     STATE.stage = "review";
     STATE.scanConvertDown = false;
     render();
-    toast("重新解析成功，請檢視並確認工具定義", "success");
+    toast(t("convert.reimportSuccessToast"), "success");
   } catch (caught) {
     STATE.scanReimportBusy = false;
     const message = caught instanceof Error ? caught.message : String(caught);
@@ -993,17 +996,17 @@ function renderReviewStage() {
             <tr>
               <td class="mono cell-param-name">${escapeHtml(input.param_name)}</td>
               <td>${kindBadge(input.kind)}</td>
-              <td>${input.required ? '<span class="required-badge">必填</span>' : '<span class="cell-muted">選填</span>'}</td>
+              <td>${input.required ? `<span class="required-badge">${t("common.required")}</span>` : `<span class="cell-muted">${t("common.optional")}</span>`}</td>
               <td>
                 <input type="text" class="cell-input" data-field="description" data-idx="${idx}"
-                  value="${escapeHtml(input.description)}" placeholder="說明……" />
+                  value="${escapeHtml(input.description)}" placeholder="${t("common.descPlaceholder")}" />
               </td>
               ${numericCells}
             </tr>
           `;
         })
         .join("")
-    : `<tr><td colspan="7" class="cell-empty">此定義沒有輸入參數</td></tr>`;
+    : `<tr><td colspan="7" class="cell-empty">${t("convert.noInputParams")}</td></tr>`;
 
   const outputsRows = d.outputs.length
     ? d.outputs
@@ -1013,37 +1016,37 @@ function renderReviewStage() {
             <td>${kindBadge(output.kind)}</td>
             <td>
               <input type="text" class="cell-input" data-field="description" data-idx="${idx}"
-                value="${escapeHtml(output.description)}" placeholder="說明……" />
+                value="${escapeHtml(output.description)}" placeholder="${t("common.descPlaceholder")}" />
             </td>
             <td>
               <input type="text" class="cell-input" data-field="unit" data-idx="${idx}"
-                value="${escapeHtml(output.unit)}" placeholder="單位……" />
+                value="${escapeHtml(output.unit)}" placeholder="${t("common.unitPlaceholder")}" />
             </td>
           </tr>
         `)
         .join("")
-    : `<tr><td colspan="4" class="cell-empty">此定義沒有輸出參數</td></tr>`;
+    : `<tr><td colspan="4" class="cell-empty">${t("convert.noOutputParams")}</td></tr>`;
 
   return `
     <div class="review-panel">
       <div class="summary-card">
         <div class="summary-grid">
           <div class="summary-field">
-            <label class="field-label" for="draft-id">工具 id</label>
+            <label class="field-label" for="draft-id">${t("common.toolId")}</label>
             <input type="text" id="draft-id" class="input-text mono ${idErrorClass}" value="${escapeHtml(d.id)}" />
-            <p id="draft-id-msg" class="${STATE.idError ? "field-error" : "field-hint"}">${escapeHtml(STATE.idError || ID_HINT)}</p>
+            <p id="draft-id-msg" class="${STATE.idError ? "field-error" : "field-hint"}">${escapeHtml(STATE.idError || idHint())}</p>
           </div>
           <div class="summary-field">
-            <label class="field-label" for="draft-display-name">顯示名稱</label>
+            <label class="field-label" for="draft-display-name">${t("common.displayName")}</label>
             <input type="text" id="draft-display-name" class="input-text" value="${escapeHtml(d.display_name)}" />
           </div>
           <div class="summary-field summary-field-wide">
-            <label class="field-label" for="draft-description">描述</label>
+            <label class="field-label" for="draft-description">${t("common.description")}</label>
             <textarea id="draft-description" class="input-textarea" rows="2"
-              placeholder="留空時將自動填入生成的說明，仍可自行修改">${escapeHtml(d.description)}</textarea>
+              placeholder="${t("common.descAutoFillHint")}">${escapeHtml(d.description)}</textarea>
           </div>
           <div class="summary-field summary-field-wide">
-            <label class="field-label">來源檔案（唯讀）</label>
+            <label class="field-label">${t("convert.sourceFileReadonly")}</label>
             <p class="readonly-value mono">${escapeHtml(d.gh_file)}</p>
           </div>
           ${
@@ -1051,7 +1054,7 @@ function renderReviewStage() {
               ? `
           <div class="summary-field summary-field-wide">
             <details class="auto-doc-details">
-              <summary>查看自動生成的完整說明</summary>
+              <summary>${t("common.viewAutoDoc")}</summary>
               <pre class="schema-preview">${escapeHtml(d.auto_doc)}</pre>
             </details>
           </div>`
@@ -1061,18 +1064,18 @@ function renderReviewStage() {
       </div>
 
       <div class="table-section">
-        <h3 class="table-section-title">輸入 <span class="table-count">${d.inputs.length}</span></h3>
+        <h3 class="table-section-title">${t("common.inputs")} <span class="table-count">${d.inputs.length}</span></h3>
         <div class="table-scroll">
           <table class="data-table">
             <thead>
               <tr>
-                <th>參數名稱</th>
-                <th>型別</th>
-                <th>必填</th>
-                <th>描述</th>
-                <th>預設值</th>
-                <th>最小值</th>
-                <th>最大值</th>
+                <th>${t("common.thParamNameFull")}</th>
+                <th>${t("common.thType")}</th>
+                <th>${t("common.thRequired")}</th>
+                <th>${t("common.thDescription")}</th>
+                <th>${t("common.thDefault")}</th>
+                <th>${t("common.thMin")}</th>
+                <th>${t("common.thMax")}</th>
               </tr>
             </thead>
             <tbody id="inputs-tbody">${inputsRows}</tbody>
@@ -1081,15 +1084,15 @@ function renderReviewStage() {
       </div>
 
       <div class="table-section">
-        <h3 class="table-section-title">輸出 <span class="table-count">${d.outputs.length}</span></h3>
+        <h3 class="table-section-title">${t("common.outputs")} <span class="table-count">${d.outputs.length}</span></h3>
         <div class="table-scroll">
           <table class="data-table">
             <thead>
               <tr>
-                <th>參數名稱</th>
-                <th>型別</th>
-                <th>描述</th>
-                <th>單位</th>
+                <th>${t("common.thParamNameFull")}</th>
+                <th>${t("common.thType")}</th>
+                <th>${t("common.thDescription")}</th>
+                <th>${t("common.thUnit")}</th>
               </tr>
             </thead>
             <tbody id="outputs-tbody">${outputsRows}</tbody>
@@ -1098,10 +1101,10 @@ function renderReviewStage() {
       </div>
 
       <div class="review-actions">
-        <button type="button" class="btn btn-ghost" id="reimport-btn">重新匯入</button>
+        <button type="button" class="btn btn-ghost" id="reimport-btn">${t("convert.reimport")}</button>
         <div class="review-actions-primary">
-          <button type="button" class="btn btn-secondary" id="save-draft-btn">存為草稿</button>
-          <button type="button" class="btn btn-primary" id="register-btn">註冊到 MCP</button>
+          <button type="button" class="btn btn-secondary" id="save-draft-btn">${t("convert.saveDraftBtn")}</button>
+          <button type="button" class="btn btn-primary" id="register-btn">${t("convert.registerBtn")}</button>
         </div>
       </div>
     </div>
@@ -1118,7 +1121,7 @@ function bindReviewStage(stageEl) {
     // 訊息元素固定存在（render 時就放好），這裡只就地更新 class 與文字，
     // 不做動態插入——快速輸入下也不可能重複。
     idMsg.className = STATE.idError ? "field-error" : "field-hint";
-    idMsg.textContent = STATE.idError || ID_HINT;
+    idMsg.textContent = STATE.idError || idHint();
   });
 
   stageEl.querySelector("#draft-display-name").addEventListener("input", (ev) => {
@@ -1133,7 +1136,7 @@ function bindReviewStage(stageEl) {
   bindEditableCells(stageEl.querySelector("#outputs-tbody"), STATE.draft.outputs, []);
 
   stageEl.querySelector("#reimport-btn").addEventListener("click", () => {
-    if (window.confirm("確定要捨棄目前草稿並重新匯入嗎？")) {
+    if (window.confirm(t("convert.discardDraftConfirm"))) {
       STATE.stage = "import";
       STATE.draft = null;
       STATE.idError = "";
@@ -1156,7 +1159,7 @@ async function registerDraft(status) {
   // 數字欄位輸入無效值時只標紅、不寫入 draft（見 bindEditableCells），若不
   // 擋下會靜默用舊值送出。
   if (root.querySelectorAll(".input-invalid").length > 0) {
-    toast("請先修正表格中標記為紅色的欄位", "error");
+    toast(t("common.fixInvalidFields"), "error");
     return;
   }
 
@@ -1164,7 +1167,7 @@ async function registerDraft(status) {
   if (idErr) {
     STATE.idError = idErr;
     render();
-    toast("請先修正工具 id 格式", "error");
+    toast(t("convert.fixIdFormat"), "error");
     return;
   }
 
@@ -1181,7 +1184,7 @@ async function registerDraft(status) {
     STATE.stage = "done";
     render();
     toast(
-      status === "registered" ? "已註冊，MCP 工具清單已更新" : "已存為草稿",
+      status === "registered" ? t("convert.registeredToast") : t("convert.savedDraftToast"),
       "success"
     );
   } catch (err) {
@@ -1194,14 +1197,19 @@ async function registerDraft(status) {
 
 function renderDoneStage() {
   const isRegistered = STATE.registerResult?.status === "registered";
+  const name = escapeHtml(STATE.draft?.display_name || "");
+  const id = escapeHtml(STATE.draft?.id || "");
+  const desc = isRegistered
+    ? t("convert.doneDescRegistered", { name, id })
+    : t("convert.doneDescDraft", { name, id });
   return `
     <div class="success-card">
       <span class="success-icon" aria-hidden="true">&#10003;</span>
-      <h3>${isRegistered ? "已註冊到 MCP" : "已存為草稿"}</h3>
-      <p>工具「${escapeHtml(STATE.draft?.display_name || "")}」（id: <span class="mono">${escapeHtml(STATE.draft?.id || "")}</span>）${isRegistered ? "已加入 MCP 工具清單。" : "已儲存，可稍後於工具管理頁面繼續編輯並註冊。"}</p>
+      <h3>${isRegistered ? t("convert.doneRegisteredTitle") : t("convert.doneDraftTitle")}</h3>
+      <p>${desc}</p>
       <div class="success-actions">
-        <a class="btn btn-primary" href="#/manager">前往工具管理</a>
-        <button type="button" class="btn btn-ghost" id="import-another-btn">匯入下一個</button>
+        <a class="btn btn-primary" href="#/manager">${t("convert.gotoManager")}</a>
+        <button type="button" class="btn btn-ghost" id="import-another-btn">${t("convert.importAnother")}</button>
       </div>
     </div>
   `;

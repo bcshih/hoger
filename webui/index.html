@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>HOGER — GH → Hops + MCP 工具鏈</title>
+<title id="doc-title">HOGER — GH → Hops + MCP 工具鏈</title>
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -15,7 +15,7 @@
     <span class="hdr-mark">HG</span>
     <div class="hdr-titles">
       <h1 class="hdr-title">HOGER</h1>
-      <p class="hdr-subtitle">GH → Hops + MCP 工具鏈</p>
+      <p class="hdr-subtitle" id="hdr-subtitle">GH → Hops + MCP 工具鏈</p>
     </div>
   </div>
 
@@ -30,28 +30,31 @@
       <span class="lamp-label">Rhino.Compute</span>
       <span class="lamp-text" id="lamp-compute-text">檢查中</span>
     </button>
+    <button class="lamp lang-toggle" id="lang-toggle-btn" type="button" title="切換語言" aria-label="切換語言">
+      <span class="lamp-text" id="lang-toggle-text">EN</span>
+    </button>
   </div>
 </header>
 
 <div class="banner" id="compute-banner" hidden>
   <span class="banner-icon" aria-hidden="true">&#9888;</span>
-  <span>Rhino.Compute 未啟動——請先啟動 compute.geometry（localhost:5000）</span>
+  <span id="compute-banner-text">Rhino.Compute 未啟動——請先啟動 compute.geometry（localhost:5000）</span>
 </div>
 
-<nav class="tabs" aria-label="主要頁籤">
+<nav class="tabs" aria-label="主要頁籤" id="main-tabs">
   <a class="tab" href="#/convert" data-route="convert">
     <span class="tab-index">01</span>
-    <span class="tab-name">轉換</span>
+    <span class="tab-name" id="tab-name-convert">轉換</span>
     <span class="tab-en">Import &amp; Convert</span>
   </a>
   <a class="tab" href="#/manager" data-route="manager">
     <span class="tab-index">02</span>
-    <span class="tab-name">工具管理</span>
+    <span class="tab-name" id="tab-name-manager">工具管理</span>
     <span class="tab-en">Tool Manager</span>
   </a>
   <a class="tab" href="#/tester" data-route="tester">
     <span class="tab-index">03</span>
-    <span class="tab-name">測試</span>
+    <span class="tab-name" id="tab-name-tester">測試</span>
     <span class="tab-en">Test Harness</span>
   </a>
 </nav>

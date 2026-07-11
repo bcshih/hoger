@@ -18,6 +18,7 @@
 
 import { api, toast } from "./api.js";
 import { escapeHtml, kindBadge } from "./ui-common.js";
+import { t, getLang } from "./i18n.js";
 
 const RUN_TIMEOUT_MS = 620000; // 後端 evaluate timeout 600s，留一些餘裕
 
@@ -78,6 +79,12 @@ export function init(container) {
   window.addEventListener("hashchange", cleanup, { once: true });
 }
 
+// 語言切換時由 app.js 呼叫：只重繪（讀現有 STATE），保留已選工具、已填
+// 表單值、執行結果等，不重置任何東西、不重啟計時器或健康輪詢。
+export function rerender() {
+  if (root) render();
+}
+
 function stopTick() {
   if (tickTimer) {
     clearInterval(tickTimer);
@@ -119,16 +126,16 @@ function render() {
   root.innerHTML = `
     <div class="view-head">
       <span class="view-eyebrow">03 · Test Harness</span>
-      <h2 class="view-title">測試</h2>
-      <p class="view-desc">選擇工具、填入參數並執行，檢視輸出與錯誤訊息。</p>
+      <h2 class="view-title">${t("header.tab.tester")}</h2>
+      <p class="view-desc">${t("tester.viewDesc")}</p>
     </div>
     <div class="tester-layout">
       <div class="tester-select-card">
-        <label class="field-label" for="tool-select">選擇工具</label>
+        <label class="field-label" for="tool-select">${t("tester.selectToolLabel")}</label>
         <select id="tool-select" class="input-text" ${STATE.loadingTools ? "disabled" : ""}>
           ${renderToolOptions()}
         </select>
-        <p class="field-hint">只有已註冊（registered）的工具可以執行；草稿請先在「工具管理」區註冊。</p>
+        <p class="field-hint">${t("tester.selectHint")}</p>
       </div>
       <div id="tester-form-area"></div>
       <div id="tester-result-area"></div>
@@ -153,20 +160,20 @@ function render() {
 
 function renderToolOptions() {
   if (STATE.loadingTools) {
-    return `<option value="">載入中……</option>`;
+    return `<option value="">${t("common.loading")}</option>`;
   }
   if (STATE.tools.length === 0) {
-    return `<option value="">尚無工具，請先於轉換區建立</option>`;
+    return `<option value="">${t("tester.noToolsOption")}</option>`;
   }
-  const placeholder = `<option value="">請選擇一個工具……</option>`;
+  const placeholder = `<option value="">${t("tester.selectPlaceholderOption")}</option>`;
   const options = STATE.tools
-    .map((t) => {
-      const isRegistered = t.status === "registered";
+    .map((tool) => {
+      const isRegistered = tool.status === "registered";
       const label = isRegistered
-        ? `${t.display_name}（${t.id}）`
-        : `${t.display_name}（${t.id}）—— 草稿，請先在工具管理區註冊`;
-      const selected = t.id === STATE.selectedId ? "selected" : "";
-      return `<option value="${escapeHtml(t.id)}" ${isRegistered ? "" : "disabled"} ${selected}>${escapeHtml(label)}</option>`;
+        ? t("tester.toolOptionRegistered", { name: tool.display_name, id: tool.id })
+        : t("tester.toolOptionDraft", { name: tool.display_name, id: tool.id });
+      const selected = tool.id === STATE.selectedId ? "selected" : "";
+      return `<option value="${escapeHtml(tool.id)}" ${isRegistered ? "" : "disabled"} ${selected}>${escapeHtml(label)}</option>`;
     })
     .join("");
   return placeholder + options;
@@ -246,34 +253,34 @@ function renderFormArea() {
   }
 
   if (STATE.loadingManifest || !STATE.manifest) {
-    area.innerHTML = `<div class="manager-list-loading">載入工具定義中……</div>`;
+    area.innerHTML = `<div class="manager-list-loading">${t("common.loadingToolDef")}</div>`;
     return;
   }
 
   const m = STATE.manifest;
   const fieldsHtml = m.inputs.length
     ? m.inputs.map((input) => renderField(input)).join("")
-    : `<p class="field-hint">此工具沒有輸入參數，可直接執行。</p>`;
+    : `<p class="field-hint">${t("tester.noInputParamsCanRun")}</p>`;
 
   area.innerHTML = `
     <div class="tester-form-card">
-      <h3 class="table-section-title">輸入參數 <span class="table-count">${m.inputs.length}</span></h3>
+      <h3 class="table-section-title">${t("tester.inputParamsTitle")} <span class="table-count">${m.inputs.length}</span></h3>
       <div class="tester-fields">${fieldsHtml}</div>
 
       <div class="tester-run-row">
         <label class="tester-debug-toggle">
           <input type="checkbox" id="debug-mode-checkbox" ${STATE.debugMode ? "checked" : ""} />
-          <span>debug 模式（回應含 raw）</span>
+          <span>${t("tester.debugModeLabel")}</span>
         </label>
         <div class="tester-run-primary">
-          <span id="run-timer" class="tester-run-timer" ${STATE.running ? "" : "hidden"}>已耗時 0.0s</span>
+          <span id="run-timer" class="tester-run-timer" ${STATE.running ? "" : "hidden"}>${t("tester.elapsedInitial")}</span>
           <button type="button" class="btn btn-primary" id="run-btn">
-            ${STATE.running ? `<span class="btn-spinner" aria-hidden="true"></span>執行中……` : "執行測試"}
+            ${STATE.running ? `<span class="btn-spinner" aria-hidden="true"></span>${t("tester.running")}` : t("tester.runBtn")}
           </button>
         </div>
       </div>
       <p id="compute-down-hint" class="field-error" ${STATE.computeOk ? "hidden" : ""}>
-        Rhino.Compute 未啟動，請先啟動 compute.geometry（localhost:5000）後再執行。
+        ${t("tester.computeDownHint")}
       </p>
     </div>
   `;
@@ -283,7 +290,7 @@ function renderFormArea() {
 }
 
 function renderField(input) {
-  const requiredMark = input.required ? '<span class="required-badge">必填</span>' : "";
+  const requiredMark = input.required ? `<span class="required-badge">${t("common.required")}</span>` : "";
   const header = `
     <div class="tester-field-head">
       <span class="mono tester-field-name">${escapeHtml(input.param_name)}</span>
@@ -340,7 +347,7 @@ function renderNumberControl(input) {
   }
   return `
     <input type="number" class="input-text mono" data-role="number" data-param="${escapeHtml(input.param_name)}"
-      step="${step}" value="${escapeHtml(value)}" placeholder="${input.kind === "integer" ? "整數……" : "數字……"}" />
+      step="${step}" value="${escapeHtml(value)}" placeholder="${input.kind === "integer" ? t("tester.integerPlaceholder") : t("tester.numberPlaceholder")}" />
   `;
 }
 
@@ -374,7 +381,7 @@ function renderStringControl(input) {
       </select>
     `;
   }
-  const placeholder = isPathLikeParam(input) ? "檔案路徑，例如 C:\\path\\to\\file" : "字串……";
+  const placeholder = isPathLikeParam(input) ? t("tester.filePathPlaceholder") : t("tester.stringPlaceholder");
   return `
     <input type="text" class="input-text mono" data-role="string" data-param="${escapeHtml(input.param_name)}"
       value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" />
@@ -387,9 +394,9 @@ function renderGeometryControl(input) {
 
   return `
     <div class="tester-geometry" data-param="${escapeHtml(input.param_name)}">
-      <div class="import-mode-toggle" role="tablist" aria-label="幾何輸入方式">
+      <div class="import-mode-toggle" role="tablist" aria-label="${t("tester.geometryModeAria")}">
         <button type="button" class="import-mode-btn geometry-mode-btn ${mode === "path" ? "active" : ""}" data-mode="path" data-param="${escapeHtml(input.param_name)}">
-          .3dm 檔案路徑
+          ${t("tester.geometryPathMode")}
         </button>
         <button type="button" class="import-mode-btn geometry-mode-btn ${mode === "encoded" ? "active" : ""}" data-mode="encoded" data-param="${escapeHtml(input.param_name)}">
           encoded JSON
@@ -400,14 +407,14 @@ function renderGeometryControl(input) {
           mode === "path"
             ? `
               <input type="text" class="input-text mono" data-role="geometry-path" data-param="${escapeHtml(input.param_name)}"
-                value="${escapeHtml(value.file_3dm)}" placeholder="檔案路徑，例如 C:\\path\\to\\model.3dm" />
+                value="${escapeHtml(value.file_3dm)}" placeholder="${t("tester.geometryPathPlaceholder")}" />
               <input type="text" class="input-text" data-role="geometry-layer" data-param="${escapeHtml(input.param_name)}"
-                value="${escapeHtml(value.layer)}" placeholder="圖層名稱（選填）" />
+                value="${escapeHtml(value.layer)}" placeholder="${t("tester.geometryLayerPlaceholder")}" />
             `
             : `
               <textarea class="input-textarea mono" data-role="geometry-encoded" data-param="${escapeHtml(input.param_name)}"
-                rows="4" placeholder='每行一筆 JSON，或整體貼上一個 JSON 陣列，例如：&#10;["{...}", "{...}"]'>${escapeHtml(value.encoded)}</textarea>
-              <p class="field-hint">接受 JSON 陣列（rhino3dm 編碼字串組成），或每行一筆 JSON 字串。</p>
+                rows="4" placeholder="${escapeHtml(t("tester.geometryEncodedPlaceholder"))}">${escapeHtml(value.encoded)}</textarea>
+              <p class="field-hint">${t("tester.geometryEncodedHint")}</p>
             `
         }
       </div>
@@ -650,12 +657,13 @@ async function runTool() {
 
   if (invalidFields.length > 0) {
     invalidFields.forEach(markFieldInvalid);
-    toast("請修正標紅的欄位後再執行", "error");
+    toast(t("tester.fixInvalidFieldsToast"), "error");
     return;
   }
   if (missingRequired.length > 0) {
     missingRequired.forEach(markFieldInvalid);
-    toast(`必填參數未填寫：${missingRequired.join("、")}`, "error");
+    const separator = getLang() === "en" ? ", " : "、";
+    toast(t("tester.missingRequiredToast", { names: missingRequired.join(separator) }), "error");
     return;
   }
 
@@ -671,7 +679,7 @@ async function runTool() {
   tickTimer = setInterval(() => {
     STATE.elapsedTickMs = Date.now() - STATE.runStartedAt;
     const timerEl = root.querySelector("#run-timer");
-    if (timerEl) timerEl.textContent = `已耗時 ${(STATE.elapsedTickMs / 1000).toFixed(1)}s`;
+    if (timerEl) timerEl.textContent = t("tester.elapsedTemplate", { s: (STATE.elapsedTickMs / 1000).toFixed(1) });
   }, 100);
 
   const debugSuffix = STATE.debugMode ? "?debug=true" : "";
@@ -683,7 +691,8 @@ async function runTool() {
       timeoutMs: RUN_TIMEOUT_MS,
     });
     STATE.result = result;
-    toast(result.errors && result.errors.length ? "執行完成，但有錯誤訊息" : "執行完成", result.errors && result.errors.length ? "error" : "success");
+    const hasRunErrors = result.errors && result.errors.length;
+    toast(hasRunErrors ? t("tester.runCompleteWithErrors") : t("tester.runComplete"), hasRunErrors ? "error" : "success");
   } catch (err) {
     STATE.runError = errMsg(err);
     toast(STATE.runError, "error");
@@ -712,7 +721,7 @@ function renderResultArea() {
         <div class="inline-alert" role="alert">
           <span class="inline-alert-icon" aria-hidden="true">&#9888;</span>
           <div>
-            <strong>執行失敗</strong>
+            <strong>${t("tester.runFailedTitle")}</strong>
             <p>${escapeHtml(STATE.runError)}</p>
           </div>
         </div>
@@ -730,8 +739,8 @@ function renderResultArea() {
         <div class="inline-alert inline-alert-amber">
           <span class="inline-alert-icon" aria-hidden="true">&#9888;</span>
           <div>
-            <strong>模型單位注意</strong>
-            <p>模型單位為 ${escapeHtml(r.modelunits)}，請確認幾何尺度。</p>
+            <strong>${t("tester.unitsWarningTitle")}</strong>
+            <p>${t("tester.unitsWarningDesc", { unit: escapeHtml(r.modelunits) })}</p>
           </div>
         </div>
       `
@@ -739,29 +748,29 @@ function renderResultArea() {
 
   area.innerHTML = `
     <div class="tester-result-card">
-      <h3 class="table-section-title">執行結果</h3>
+      <h3 class="table-section-title">${t("tester.resultTitle")}</h3>
 
       <div class="tester-summary-row">
         <span class="status-badge ${hasErrors ? "status-badge-draft" : "status-badge-registered"}">
-          ${hasErrors ? "失敗" : "成功"}
+          ${hasErrors ? t("common.failed") : t("common.success")}
         </span>
-        <span class="tester-summary-item mono">耗時 ${elapsedS}s</span>
-        ${r.modelunits ? `<span class="tester-summary-item mono">單位 ${escapeHtml(r.modelunits)}</span>` : ""}
+        <span class="tester-summary-item mono">${t("tester.elapsedLabel", { s: elapsedS })}</span>
+        ${r.modelunits ? `<span class="tester-summary-item mono">${t("tester.unitsLabel", { unit: escapeHtml(r.modelunits) })}</span>` : ""}
       </div>
 
       ${unitsWarning}
-      ${renderMessageList("錯誤", r.errors, "inline-alert")}
-      ${renderMessageList("警告", r.warnings, "inline-alert inline-alert-amber")}
+      ${renderMessageList(t("common.errors"), r.errors, "inline-alert")}
+      ${renderMessageList(t("common.warnings"), r.warnings, "inline-alert inline-alert-amber")}
 
       <div class="table-section">
-        <h3 class="table-section-title">輸出</h3>
+        <h3 class="table-section-title">${t("common.outputs")}</h3>
         ${renderOutputsTable(r.outputs)}
       </div>
 
       ${renderResult3dm(r.result_3dm)}
 
       <details class="tester-raw-details">
-        <summary>原始 JSON</summary>
+        <summary>${t("common.rawJson")}</summary>
         <pre class="schema-preview mono">${escapeHtml(JSON.stringify(r, null, 2))}</pre>
       </details>
     </div>
@@ -784,7 +793,7 @@ function renderMessageList(title, list, cardClass) {
     .join("");
   return `
     <div class="tester-message-group">
-      <p class="field-label">${escapeHtml(title)}（${list.length}）</p>
+      <p class="field-label">${escapeHtml(t("common.withCount", { title, n: list.length }))}</p>
       ${items}
     </div>
   `;
@@ -793,7 +802,7 @@ function renderMessageList(title, list, cardClass) {
 function renderOutputsTable(outputs) {
   const entries = Object.entries(outputs || {});
   if (entries.length === 0) {
-    return `<p class="field-hint">此工具沒有輸出。</p>`;
+    return `<p class="field-hint">${t("tester.noOutputs")}</p>`;
   }
 
   const manifestOutputs = STATE.manifest?.outputs || [];
@@ -817,9 +826,9 @@ function renderOutputsTable(outputs) {
       <table class="data-table">
         <thead>
           <tr>
-            <th>參數名稱</th>
-            <th>型別</th>
-            <th>值</th>
+            <th>${t("common.thParamNameFull")}</th>
+            <th>${t("common.thType")}</th>
+            <th>${t("common.thValue")}</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -831,19 +840,19 @@ function renderOutputsTable(outputs) {
 function renderOutputValue(name, kind, value) {
   if (kind === "geometry" && value && typeof value === "object") {
     const count = value.count ?? 0;
-    const inDm = value.in_3dm ? "已寫入 3dm" : "未寫入 3dm";
-    return `<span>${count} 個物件</span> <span class="cell-muted">（${escapeHtml(inDm)}）</span>`;
+    const inDm = value.in_3dm ? t("tester.writtenTo3dm") : t("tester.notWrittenTo3dm");
+    return `<span>${t("tester.objectCount", { n: count })}</span> <span class="cell-muted">（${escapeHtml(inDm)}）</span>`;
   }
 
   if (Array.isArray(value)) {
-    if (value.length === 0) return `<span class="cell-muted">（空）</span>`;
+    if (value.length === 0) return `<span class="cell-muted">${t("tester.emptyArray")}</span>`;
     const joined = value.map((v) => String(v)).join(", ");
     if (value.length > 10) {
       const preview = value.slice(0, 10).map((v) => String(v)).join(", ");
       const detailId = `output-list-${cssIdSafe(name)}`;
       return `
         <details class="tester-list-details" id="${detailId}">
-          <summary>${escapeHtml(preview)}, …（共 ${value.length} 項，點擊展開）</summary>
+          <summary>${escapeHtml(preview)}, ${t("tester.moreItemsExpand", { n: value.length })}</summary>
           <p class="tester-list-full mono">${escapeHtml(joined)}</p>
         </details>
       `;
@@ -870,10 +879,10 @@ function renderResult3dm(path) {
   if (!path) return "";
   return `
     <div class="table-section">
-      <h3 class="table-section-title">結果 .3dm 檔案</h3>
+      <h3 class="table-section-title">${t("tester.result3dmTitle")}</h3>
       <div class="tester-result-path-row">
         <p class="readonly-value mono tester-result-path">${escapeHtml(path)}</p>
-        <button type="button" class="btn btn-ghost" id="copy-path-btn" data-path="${escapeHtml(path)}">複製路徑</button>
+        <button type="button" class="btn btn-ghost" id="copy-path-btn" data-path="${escapeHtml(path)}">${t("tester.copyPathBtn")}</button>
       </div>
     </div>
   `;
@@ -890,7 +899,7 @@ async function copyToClipboard(text) {
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
-      toast("已複製路徑", "success");
+      toast(t("tester.copiedToast"), "success");
       return;
     }
     throw new Error("clipboard API unavailable");
@@ -906,9 +915,9 @@ async function copyToClipboard(text) {
       textarea.select();
       document.execCommand("copy");
       document.body.removeChild(textarea);
-      toast("已複製路徑", "success");
+      toast(t("tester.copiedToast"), "success");
     } catch {
-      toast("複製失敗，請手動選取路徑", "error");
+      toast(t("tester.copyFailedToast"), "error");
     }
   }
 }

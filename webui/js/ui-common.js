@@ -10,8 +10,15 @@
 //
 // 純函式 + 少量繫結邏輯，不持有模組級狀態，可安全被多個頁籤 import。
 
+import { t } from "./i18n.js";
+
 export const ID_PATTERN = /^[a-z0-9-]+$/;
-export const ID_HINT = "僅限小寫字母、數字、連字號（^[a-z0-9-]+$）。";
+
+// 呼叫端（convert.js/manager.js）在 render 時呼叫，而非模組載入時算一次，
+// 確保語言切換後重繪能拿到當下語言的文字。
+export function idHint() {
+  return t("common.idHint");
+}
 
 export const KIND_LABELS = {
   number: "number",
@@ -33,8 +40,8 @@ export function kindBadge(kind) {
 }
 
 export function validateId(value) {
-  if (!value) return "id 不可為空";
-  if (!ID_PATTERN.test(value)) return "格式不符：僅限小寫字母、數字、連字號";
+  if (!value) return t("validate.idRequired");
+  if (!ID_PATTERN.test(value)) return t("validate.idFormat");
   return "";
 }
 

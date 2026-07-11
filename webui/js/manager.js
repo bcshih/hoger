@@ -16,8 +16,11 @@
 
 import { api, toast } from "./api.js";
 import { escapeHtml, kindBadge, bindEditableCells } from "./ui-common.js";
+import { t } from "./i18n.js";
 
-const STATUS_LABELS = { registered: "已註冊", draft: "草稿" };
+function toolStatusLabel(status) {
+  return status === "registered" ? t("common.statusRegistered") : t("common.statusDraft");
+}
 
 const STATE = {
   loading: false,
@@ -31,7 +34,9 @@ const STATE = {
   deleting: false,
 };
 
-const UNSAVED_CONFIRM_MSG = "目前工具有未儲存的變更，切換後將遺失。確定要繼續嗎？";
+function unsavedConfirmMsg() {
+  return t("manager.unsavedConfirm");
+}
 
 // 編輯中的 manifest 與最後載入/儲存版本不一致 -> 有未儲存變更。
 // 兩邊都來自同一份後端 JSON（一份直接持有、一份深拷貝），key 順序一致，
@@ -58,20 +63,26 @@ export function init(container) {
   loadList();
 }
 
+// 語言切換時由 app.js 呼叫：只重繪（讀現有 STATE），不重置選取的工具或
+// 未儲存的編輯內容。
+export function rerender() {
+  if (root) render();
+}
+
 // ── render ───────────────────────────────────────────────────────────
 
 function render() {
   root.innerHTML = `
     <div class="view-head">
       <span class="view-eyebrow">02 · Tool Manager</span>
-      <h2 class="view-title">工具管理</h2>
-      <p class="view-desc">檢視、編輯、刪除已建立的工具，並即時預覽 MCP Schema。</p>
+      <h2 class="view-title">${t("header.tab.manager")}</h2>
+      <p class="view-desc">${t("manager.viewDesc")}</p>
     </div>
     <div class="manager-layout">
       <div class="manager-list-col">
         <div class="manager-list-head">
-          <h3 class="table-section-title">工具清單 <span class="table-count">${STATE.tools.length}</span></h3>
-          <button type="button" class="btn btn-ghost" id="refresh-btn" ${STATE.loading ? "disabled" : ""}>重新整理</button>
+          <h3 class="table-section-title">${t("manager.toolListTitle")} <span class="table-count">${STATE.tools.length}</span></h3>
+          <button type="button" class="btn btn-ghost" id="refresh-btn" ${STATE.loading ? "disabled" : ""}>${t("manager.refreshBtn")}</button>
         </div>
         <div id="tool-list"></div>
       </div>
@@ -83,7 +94,7 @@ function render() {
   renderDetail();
 
   root.querySelector("#refresh-btn").addEventListener("click", () => {
-    if (isDirty() && !window.confirm(UNSAVED_CONFIRM_MSG)) return;
+    if (isDirty() && !window.confirm(unsavedConfirmMsg())) return;
     loadList();
   });
 }
@@ -93,17 +104,17 @@ function renderList() {
   if (!listEl) return;
 
   if (STATE.loading) {
-    listEl.innerHTML = `<div class="manager-list-loading">載入中……</div>`;
+    listEl.innerHTML = `<div class="manager-list-loading">${t("common.loading")}</div>`;
     return;
   }
 
   if (STATE.tools.length === 0) {
     listEl.innerHTML = `
       <div class="empty-guide-card">
-        <span class="placeholder-tag">尚無工具</span>
-        <h3>尚無工具</h3>
-        <p>前往轉換區匯入第一個 .gh 檔案，即可在這裡管理。</p>
-        <a class="btn btn-primary" href="#/convert">前往轉換區</a>
+        <span class="placeholder-tag">${t("manager.noToolsTag")}</span>
+        <h3>${t("manager.noToolsTitle")}</h3>
+        <p>${t("manager.noToolsDesc")}</p>
+        <a class="btn btn-primary" href="#/convert">${t("manager.gotoConvert")}</a>
       </div>
     `;
     return;
@@ -111,7 +122,7 @@ function renderList() {
 
   listEl.innerHTML = `
     <div class="tool-card-list">
-      ${STATE.tools.map((t) => renderToolCard(t)).join("")}
+      ${STATE.tools.map((tool) => renderToolCard(tool)).join("")}
     </div>
   `;
 
@@ -124,21 +135,21 @@ function renderList() {
   });
 }
 
-function renderToolCard(t) {
-  const isActive = t.id === STATE.selectedId;
-  const statusClass = t.status === "registered" ? "status-badge-registered" : "status-badge-draft";
-  const statusLabel = STATUS_LABELS[t.status] || t.status;
+function renderToolCard(tool) {
+  const isActive = tool.id === STATE.selectedId;
+  const statusClass = tool.status === "registered" ? "status-badge-registered" : "status-badge-draft";
+  const label = toolStatusLabel(tool.status);
   return `
-    <button type="button" class="tool-card ${isActive ? "tool-card-active" : ""}" data-id="${escapeHtml(t.id)}">
+    <button type="button" class="tool-card ${isActive ? "tool-card-active" : ""}" data-id="${escapeHtml(tool.id)}">
       <div class="tool-card-top">
-        <span class="tool-card-name">${escapeHtml(t.display_name)}</span>
-        <span class="status-badge ${statusClass}">${escapeHtml(statusLabel)}</span>
+        <span class="tool-card-name">${escapeHtml(tool.display_name)}</span>
+        <span class="status-badge ${statusClass}">${escapeHtml(label)}</span>
       </div>
-      <p class="tool-card-id mono">${escapeHtml(t.id)}</p>
+      <p class="tool-card-id mono">${escapeHtml(tool.id)}</p>
       <div class="tool-card-meta">
-        <span>輸入 <strong>${t.inputs_count}</strong></span>
-        <span>輸出 <strong>${t.outputs_count}</strong></span>
-        <span class="tool-card-updated">${escapeHtml(formatTimestamp(t.updated_at))}</span>
+        <span>${t("common.inputs")} <strong>${tool.inputs_count}</strong></span>
+        <span>${t("common.outputs")} <strong>${tool.outputs_count}</strong></span>
+        <span class="tool-card-updated">${escapeHtml(formatTimestamp(tool.updated_at))}</span>
       </div>
     </button>
   `;
@@ -170,7 +181,7 @@ async function loadList() {
 }
 
 async function selectTool(id) {
-  if (isDirty() && !window.confirm(UNSAVED_CONFIRM_MSG)) return;
+  if (isDirty() && !window.confirm(unsavedConfirmMsg())) return;
   STATE.selectedId = id;
   STATE.detailLoading = true;
   STATE.manifest = null;
@@ -201,14 +212,14 @@ function renderDetail() {
   if (!STATE.selectedId) {
     detailEl.innerHTML = `
       <div class="manager-detail-empty">
-        <p>從左側清單選擇一個工具以檢視與編輯。</p>
+        <p>${t("manager.selectPrompt")}</p>
       </div>
     `;
     return;
   }
 
   if (STATE.detailLoading || !STATE.manifest) {
-    detailEl.innerHTML = `<div class="manager-list-loading">載入工具定義中……</div>`;
+    detailEl.innerHTML = `<div class="manager-list-loading">${t("common.loadingToolDef")}</div>`;
     return;
   }
 
@@ -237,47 +248,47 @@ function renderDetail() {
 
           return `
             <tr>
-              <td class="mono cell-param-name" title="param_name 唯讀，改名會破壞 MCP 引用">
+              <td class="mono cell-param-name" title="${t("manager.paramNameReadonlyTitle")}">
                 <span class="lock-icon" aria-hidden="true">&#128274;</span>${escapeHtml(input.param_name)}
               </td>
               <td>${kindBadge(input.kind)}</td>
               <td>
                 <label class="required-toggle">
                   <input type="checkbox" data-group="inputs" data-field="required" data-idx="${idx}" ${input.required ? "checked" : ""} />
-                  <span>${input.required ? "必填" : "選填"}</span>
+                  <span>${input.required ? t("common.required") : t("common.optional")}</span>
                 </label>
               </td>
               <td>
                 <input type="text" class="cell-input" data-group="inputs" data-field="description" data-idx="${idx}"
-                  value="${escapeHtml(input.description)}" placeholder="說明……" />
+                  value="${escapeHtml(input.description)}" placeholder="${t("common.descPlaceholder")}" />
               </td>
               ${numericCells}
             </tr>
           `;
         })
         .join("")
-    : `<tr><td colspan="7" class="cell-empty">此工具沒有輸入參數</td></tr>`;
+    : `<tr><td colspan="7" class="cell-empty">${t("manager.noInputParams")}</td></tr>`;
 
   const outputsRows = m.outputs.length
     ? m.outputs
         .map((output, idx) => `
           <tr>
-            <td class="mono cell-param-name" title="param_name 唯讀，改名會破壞 MCP 引用">
+            <td class="mono cell-param-name" title="${t("manager.paramNameReadonlyTitle")}">
               <span class="lock-icon" aria-hidden="true">&#128274;</span>${escapeHtml(output.param_name)}
             </td>
             <td>${kindBadge(output.kind)}</td>
             <td>
               <input type="text" class="cell-input" data-group="outputs" data-field="description" data-idx="${idx}"
-                value="${escapeHtml(output.description)}" placeholder="說明……" />
+                value="${escapeHtml(output.description)}" placeholder="${t("common.descPlaceholder")}" />
             </td>
             <td>
               <input type="text" class="cell-input" data-group="outputs" data-field="unit" data-idx="${idx}"
-                value="${escapeHtml(output.unit)}" placeholder="單位……" />
+                value="${escapeHtml(output.unit)}" placeholder="${t("common.unitPlaceholder")}" />
             </td>
           </tr>
         `)
         .join("")
-    : `<tr><td colspan="4" class="cell-empty">此工具沒有輸出參數</td></tr>`;
+    : `<tr><td colspan="4" class="cell-empty">${t("manager.noOutputParams")}</td></tr>`;
 
   const isRegistered = m.status === "registered";
 
@@ -286,59 +297,59 @@ function renderDetail() {
       <div class="summary-card">
         <div class="summary-grid">
           <div class="summary-field">
-            <label class="field-label">工具 id（唯讀）</label>
+            <label class="field-label">${t("manager.toolIdReadonly")}</label>
             <p class="readonly-value mono"><span class="lock-icon" aria-hidden="true">&#128274;</span>${escapeHtml(m.id)}</p>
           </div>
           <div class="summary-field">
-            <label class="field-label" for="edit-display-name">顯示名稱</label>
+            <label class="field-label" for="edit-display-name">${t("common.displayName")}</label>
             <input type="text" id="edit-display-name" class="input-text" value="${escapeHtml(m.display_name)}" />
           </div>
           <div class="summary-field summary-field-wide">
-            <label class="field-label" for="edit-description">描述</label>
+            <label class="field-label" for="edit-description">${t("common.description")}</label>
             <textarea id="edit-description" class="input-textarea" rows="2"
-              placeholder="留空時將自動填入生成的說明，仍可自行修改">${escapeHtml(m.description)}</textarea>
+              placeholder="${t("common.descAutoFillHint")}">${escapeHtml(m.description)}</textarea>
           </div>
           ${
             m.auto_doc
               ? `
           <div class="summary-field summary-field-wide">
             <details class="auto-doc-details">
-              <summary>查看自動生成的完整說明</summary>
+              <summary>${t("common.viewAutoDoc")}</summary>
               <pre class="schema-preview">${escapeHtml(m.auto_doc)}</pre>
             </details>
           </div>`
               : ""
           }
           <div class="summary-field summary-field-wide">
-            <label class="field-label">狀態</label>
+            <label class="field-label">${t("manager.statusLabel")}</label>
             <div class="status-toggle">
               <label class="status-toggle-option">
                 <input type="radio" name="status" value="draft" ${!isRegistered ? "checked" : ""} />
-                <span>草稿（draft）</span>
+                <span>${t("manager.statusDraftOption")}</span>
               </label>
               <label class="status-toggle-option">
                 <input type="radio" name="status" value="registered" ${isRegistered ? "checked" : ""} />
-                <span>已註冊（registered）</span>
+                <span>${t("manager.statusRegisteredOption")}</span>
               </label>
             </div>
-            <p class="field-hint">draft 不會出現在 MCP 工具清單，只有 registered 狀態的工具會被 MCP client 看到。</p>
+            <p class="field-hint">${t("manager.statusHint")}</p>
           </div>
         </div>
       </div>
 
       <div class="table-section">
-        <h3 class="table-section-title">輸入 <span class="table-count">${m.inputs.length}</span></h3>
+        <h3 class="table-section-title">${t("common.inputs")} <span class="table-count">${m.inputs.length}</span></h3>
         <div class="table-scroll">
           <table class="data-table">
             <thead>
               <tr>
-                <th>參數名稱</th>
-                <th>型別</th>
-                <th>必填</th>
-                <th>描述</th>
-                <th>預設值</th>
-                <th>最小值</th>
-                <th>最大值</th>
+                <th>${t("common.thParamNameFull")}</th>
+                <th>${t("common.thType")}</th>
+                <th>${t("common.thRequired")}</th>
+                <th>${t("common.thDescription")}</th>
+                <th>${t("common.thDefault")}</th>
+                <th>${t("common.thMin")}</th>
+                <th>${t("common.thMax")}</th>
               </tr>
             </thead>
             <tbody id="edit-inputs-tbody">${inputsRows}</tbody>
@@ -347,15 +358,15 @@ function renderDetail() {
       </div>
 
       <div class="table-section">
-        <h3 class="table-section-title">輸出 <span class="table-count">${m.outputs.length}</span></h3>
+        <h3 class="table-section-title">${t("common.outputs")} <span class="table-count">${m.outputs.length}</span></h3>
         <div class="table-scroll">
           <table class="data-table">
             <thead>
               <tr>
-                <th>參數名稱</th>
-                <th>型別</th>
-                <th>描述</th>
-                <th>單位</th>
+                <th>${t("common.thParamNameFull")}</th>
+                <th>${t("common.thType")}</th>
+                <th>${t("common.thDescription")}</th>
+                <th>${t("common.thUnit")}</th>
               </tr>
             </thead>
             <tbody id="edit-outputs-tbody">${outputsRows}</tbody>
@@ -364,14 +375,14 @@ function renderDetail() {
       </div>
 
       <div class="table-section">
-        <h3 class="table-section-title">MCP Schema 預覽（即時）</h3>
+        <h3 class="table-section-title">${t("manager.schemaPreviewTitle")}</h3>
         <pre class="schema-preview mono" id="schema-preview">${escapeHtml(JSON.stringify(STATE.mcpSchemaPreview, null, 2))}</pre>
       </div>
 
       <div class="review-actions">
-        <button type="button" class="btn btn-ghost btn-danger" id="delete-btn" ${STATE.deleting ? "disabled" : ""}>刪除</button>
+        <button type="button" class="btn btn-ghost btn-danger" id="delete-btn" ${STATE.deleting ? "disabled" : ""}>${t("common.delete")}</button>
         <div class="review-actions-primary">
-          <button type="button" class="btn btn-primary" id="save-btn" ${STATE.saving ? "disabled" : ""}>${STATE.saving ? "儲存中……" : "儲存"}</button>
+          <button type="button" class="btn btn-primary" id="save-btn" ${STATE.saving ? "disabled" : ""}>${STATE.saving ? t("common.saving") : t("common.save")}</button>
         </div>
       </div>
     </div>
@@ -406,7 +417,7 @@ function bindDetail(detailEl) {
       if (!item) return;
       item.required = checkbox.checked;
       const label = checkbox.parentElement.querySelector("span");
-      if (label) label.textContent = item.required ? "必填" : "選填";
+      if (label) label.textContent = item.required ? t("common.required") : t("common.optional");
       recomputeSchemaPreview();
     });
   });
@@ -505,7 +516,7 @@ function recomputeSchemaPreview() {
 
 async function saveManifest() {
   if (root.querySelectorAll(".input-invalid").length > 0) {
-    toast("請先修正表格中標記為紅色的欄位", "error");
+    toast(t("common.fixInvalidFields"), "error");
     return;
   }
 
@@ -516,7 +527,7 @@ async function saveManifest() {
       input.maximum !== null && input.maximum !== undefined &&
       input.minimum > input.maximum
     ) {
-      toast(`參數「${input.param_name}」的最小值大於最大值`, "error");
+      toast(t("manager.minGreaterThanMax", { name: input.param_name }), "error");
       return;
     }
   }
@@ -534,7 +545,7 @@ async function saveManifest() {
     });
     STATE.manifest = saved;
     STATE.lastSavedManifest = JSON.parse(JSON.stringify(saved));
-    toast("已儲存", "success");
+    toast(t("common.saved"), "success");
     await loadList();
     // loadList() 已呼叫 render()；重新載入此工具的 mcp_schema（改用後端權威值）
     try {
@@ -557,7 +568,7 @@ async function saveManifest() {
 async function deleteManifest() {
   const m = STATE.manifest;
   if (!m) return;
-  if (!window.confirm(`確定要刪除工具「${m.display_name}」（id: ${m.id}）嗎？此操作無法復原。`)) {
+  if (!window.confirm(t("manager.deleteConfirm", { name: m.display_name, id: m.id }))) {
     return;
   }
 
@@ -566,7 +577,7 @@ async function deleteManifest() {
 
   try {
     await api(`/api/tools/${encodeURIComponent(m.id)}`, { method: "DELETE" });
-    toast("已刪除", "success");
+    toast(t("common.deleted"), "success");
     STATE.selectedId = null;
     STATE.manifest = null;
     STATE.lastSavedManifest = null;
