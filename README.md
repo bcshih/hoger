@@ -6,6 +6,14 @@
 
 ---
 
+## ✨ 最新主要更新 (Latest Highlights)
+
+* **🌐 完整中英雙語 Web UI 介面 (Bilingual Web Interface)**：Web 管理後台（`http://localhost:8600`）現已支援**一鍵即時切換繁體中文與完整英文介面 (English / 繁體中文 Toggle)**！無論是工具轉換、MCP 參數設定、線上幾何測試，國際團隊與跨國設計師皆能無障礙順暢操作。
+* **🤖 LLM / Gemini 深度解讀插件**：支援連接 Google Gemini 等 LLM API，為轉換出的 Grasshopper 工具自動解讀意圖與豐富描述。
+* **🏗️ 支援 Rhino 7 & Rhino 8 / Speckle BIM 生態**：完美支援雙版本無頭運算及 Speckle 雲端物件流對接。
+
+---
+
 ## 🤖 AI 代理一鍵全自動安裝與無痛升級 (AI-Ready Repository)
 
 您可以直接把本 GitHub 專案網址貼給您的 AI 助理（Antigravity、Claude Desktop、Cursor、Cline、Windsurf）：

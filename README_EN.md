@@ -6,6 +6,14 @@ Automatically convert any Grasshopper (`.gh`) parametric definition into **Hops 
 
 ---
 
+## ✨ Latest Highlights
+
+* **🌐 Full Bilingual Web Interface (English / Traditional Chinese Toggle)**: The HOGER management SPA (`http://localhost:8600`) now features **full English localization** alongside Traditional Chinese with an instant language toggle button. Manage tools, inspect MCP parameters, and test Grasshopper conversions seamlessly in English!
+* **🤖 Optional LLM / Gemini Deep Interpretation**: Integrated launcher & plugin support for Google Gemini to automatically generate rich semantic metadata and descriptions for converted `.gh` files.
+* **🏗️ Rhino 7 & Rhino 8 / Speckle BIM Compatible**: Full headless compatibility across Rhino versions and Speckle BIM stream integration.
+
+---
+
 ## 🚀 AI-Ready Instant Setup (For AI Agents & Users)
 
 Simply paste this GitHub URL into your AI Assistant (Antigravity, Claude Desktop, Cursor, Cline, Windsurf):
